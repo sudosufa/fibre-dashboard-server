@@ -35,6 +35,14 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    console.log(`${req.method} ${req.path} -> ${res.statusCode} (${Date.now()-start}ms)`);
+  });
+  next();
+});
+
 async function upstash(command) {
   const res = await fetch(UPSTASH_URL, {
     method: 'POST',
@@ -49,10 +57,12 @@ async function upstash(command) {
 const path = require('path');
 
 app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
   res.sendFile(path.join(__dirname, 'Dashboard_Fibre_import_auto.html'));
 });
 
 app.get('/api/data', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
   try {
     const raw = await upstash(['GET', DATA_KEY]);
     if (!raw) return res.status(404).json({ error: 'Aucune donnée importée pour le moment.' });
@@ -71,6 +81,7 @@ app.post(
   ]),
   async (req, res) => {
     try {
+      console.log(`[upload] reçu — mainFile=${!!(req.files && req.files.mainFile)} pboFile=${!!(req.files && req.files.pboFile)} password_fourni=${!!req.body.password}`);
       if (!ADMIN_PASSWORD) return res.status(503).json({ error: "ADMIN_PASSWORD n'est pas configuré côté serveur." });
       if (req.body.password !== ADMIN_PASSWORD) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
