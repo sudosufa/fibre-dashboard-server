@@ -827,6 +827,9 @@ document.addEventListener('keydown', (e)=>{
 
 /* ---------------- derived aggregates ---------------- */
 let G, regionsSorted, bestRegion, worstRegion, totalAnomalies, namingVariants, namingBadCount, prevWeekLabel, sourceFileLabel;
+let penHistoryCache = {};
+let penStorageAvailable = null;
+const PEN_STORAGE_PREFIX = 'fibreTO:pen-week:';
 let forecastPoints, forecastLabels, avgWeeklyRacc, reg;
 
 const REGION_ALIASES = {
@@ -2726,7 +2729,7 @@ async function loadFromServer(showFeedback){
   // le bandeau ne doit apparaître que si la synchronisation échoue vraiment.
   if(!showFeedback) setSyncingIndicator(true);
   try{
-    const res = await fetch(apiBase + '/api/data');
+    const res = await fetch(apiBase + '/api/data', { cache: 'no-store' });
     if(res.status === 404){
       if(showFeedback) showToast('Serveur joignable mais aucune donnée publiée pour le moment.', '⚠️');
       else updateDemoIndicators(); // retombe sur l'indicateur "exemple" puisqu'il n'y a rien de réel à afficher
@@ -3499,10 +3502,6 @@ function buildDataFromWorkbook(wb){
    poste/navigateur.
    "En cours de fiabilisation" est ensuite entièrement dérivé :
    En_cours_fiabilisation = Total_client − (Clients_Raccordés + NB_FI) */
-
-const PEN_STORAGE_PREFIX = 'fibreTO:pen-week:';
-let penHistoryCache = {};
-let penStorageAvailable = null;
 
 function checkLocalStorage(){
   if(penStorageAvailable!==null) return penStorageAvailable;
