@@ -11,7 +11,7 @@ const express = require('express');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const fetch = require('node-fetch');
-const { buildDataFromWorkbook, buildPBOZeroData, buildPenetrationBelow50Data } = require('./logic.js');
+const { buildDataFromWorkbook, buildPBOZeroData, buildPenetrationBelow50Data, round2 } = require('./logic.js');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
@@ -20,6 +20,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL || '';
 const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 const DATA_KEY = 'fibre_dashboard_latest_data';
+const TC_HISTORY_KEY = 'fibre_dashboard_total_client_history'; // { "S29_2026": 598091, ... } — géré uniquement par le serveur
 
 if (!ADMIN_PASSWORD) console.warn('[ATTENTION] ADMIN_PASSWORD non défini — /api/upload sera inaccessible tant que ce n\'est pas configuré.');
 if (!UPSTASH_URL || !UPSTASH_TOKEN) console.warn('[ATTENTION] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN non définis — le stockage ne fonctionnera pas.');
@@ -98,6 +99,32 @@ app.post(
         }
         data = buildDataFromWorkbook(wbMain);
         data.isSeed = false;
+
+        // "Total client" : calculé automatiquement depuis l'onglet Client, mais
+        // l'admin (vous seul) peut le corriger manuellement si besoin via ce
+        // champ optionnel — les autres utilisateurs ne voient qu'un résultat
+        // en lecture seule, jamais un bouton pour le modifier eux-mêmes.
+        if (req.body.totalClientOverride !== undefined && req.body.totalClientOverride !== '') {
+          const override = Number(req.body.totalClientOverride);
+          if (isFinite(override)) data.penetration.totalClientCur = Math.round(override);
+        }
+
+        // Historique de "Total client" géré uniquement côté serveur : on
+        // mémorise la valeur de cette semaine et on retrouve automatiquement
+        // celle de la semaine précédente pour TOUT LE MONDE — plus besoin que
+        // qui que ce soit (vous y compris) ne la ressaisisse chaque semaine.
+        let tcHistory = {};
+        try {
+          const raw = await upstash(['GET', TC_HISTORY_KEY]);
+          if (raw) tcHistory = JSON.parse(raw);
+        } catch (e) { /* première utilisation, historique vide */ }
+        tcHistory[data.week] = data.penetration.totalClientCur;
+        const prevWeekKey = data.trend.length >= 2 ? data.trend[data.trend.length - 2].week : null;
+        data.penetration.totalClientPrev = (prevWeekKey && tcHistory[prevWeekKey] != null) ? tcHistory[prevWeekKey] : null;
+        data.penetration.enCoursFiabilisationPrev = data.penetration.totalClientPrev != null
+          ? round2(data.penetration.totalClientPrev - data.penetration.raccInclPrev - data.penetration.sansConstPrev)
+          : null;
+        await upstash(['SET', TC_HISTORY_KEY, JSON.stringify(tcHistory)]);
       } else {
         // on ne met à jour que le fichier PBO/pénétration : on repart des dernières données connues
         const prevRaw = await upstash(['GET', DATA_KEY]);
