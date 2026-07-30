@@ -10,6 +10,8 @@ function normalizeRegion(raw){
   const t = (raw==null?'':String(raw)).trim();
   return REGION_ALIASES[t] || t;
 }
+
+/* forecast: simple linear regression on last 10 weeks' taux */
 function linreg(points){
   const n=points.length;
   const sx=points.reduce((a,p,i)=>a+i,0);
@@ -600,6 +602,7 @@ function buildPenetrationData(plaques, communesAOA, fictifsAOA, clientAOA, curWe
       nom, eqlCur: c?c.eql:0, raccCur: c?c.racc:0,
       tauxCur: tauxC, tauxPrev: tauxP,
       evolution: (tauxC!=null && tauxP!=null) ? tauxC-tauxP : null,
+      drv: (c&&c.drv)||(p&&p.drv)||'',
     };
   }).sort((a,b)=>a.nom.localeCompare(b.nom,'fr'));
 
@@ -649,7 +652,6 @@ function buildPenetrationData(plaques, communesAOA, fictifsAOA, clientAOA, curWe
     tauxCur: tauxPenCur, tauxPrev: tauxPenPrev, tauxEvolution,
     eqlCur: globalCur.eql, eqlPrev: globalPrev.eql,
     totalClientCur, enCoursFiabilisationCur,
-    totalClientPrev: null, enCoursFiabilisationPrev: null, // renseignés côté serveur via l'historique (voir index.js)
     raccInclCur, raccInclPrev,
     sansConstCur, sansConstPrev,
     // Pourcentage_FI = NB_FI / Clients_Raccordés (racc brut, hors FI) — formule DAX fournie
