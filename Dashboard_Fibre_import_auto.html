@@ -1319,8 +1319,37 @@ function sectionRegions(){
    constitution) en un seul endroit, au lieu d'avoir à naviguer partout. */
 
 let selectedDR = null;
-function selectDR(dr){ selectedDR = dr; render('dr'); window.scrollTo({top:0, behavior:'smooth'}); }
+const MY_DR_KEY = 'fibreTO:myDR';
+function getMyDR(){ try{ return localStorage.getItem(MY_DR_KEY)||''; }catch(e){ return ''; } }
+function setMyDR(dr){ try{ localStorage.setItem(MY_DR_KEY, dr); }catch(e){} }
+function selectDR(dr){ selectedDR = dr; setMyDR(dr); render('dr'); window.scrollTo({top:0, behavior:'smooth'}); }
+function goToMyDR(){ const dr = getMyDR(); if(dr) selectDR(dr); }
 function backToDRGrid(){ selectedDR = null; render('dr'); }
+
+/* Innovation : "Score de santé DR" — combine en un seul indicateur 0-100 ce
+   qui compte vraiment pour une zone (pénétration, capacité déjà installée
+   mais inexploitée, risque de facturation manquante), avec un diagnostic en
+   une phrase généré automatiquement — pour qu'un responsable DR sache en un
+   coup d'œil où il en est et sur quoi agir en priorité, sans lire 5 tableaux. */
+function computeDRHealthScore(c){
+  const scoreTaux = Math.max(0, Math.min(100, c.taux));
+  const pboBrins = c.pboZero ? c.pboZero[2] : 0;
+  const scorePBO = Math.max(0, 100 - Math.min(100, (pboBrins / Math.max(1,c.eql)) * 1000));
+  const scTotal = c.sc || 0;
+  const scoreSC = Math.max(0, 100 - Math.min(100, (scTotal / Math.max(1,c.racc)) * 500));
+  const global = Math.round(0.5*scoreTaux + 0.25*scorePBO + 0.25*scoreSC);
+  const subs = [
+    {l:'Pénétration', v:scoreTaux},
+    {l:'PBO inexploités', v:scorePBO},
+    {l:'Sans constitution', v:scoreSC},
+  ];
+  const weakest = subs.sort((a,b)=>a.v-b.v)[0];
+  let diag;
+  if(global>=75) diag = `Zone en bonne santé globale (${pct(c.taux)} de pénétration). Point de vigilance le plus faible : ${weakest.l.toLowerCase()}.`;
+  else if(global>=50) diag = `Zone correcte mais avec des points à surveiller — priorité à traiter : ${weakest.l.toLowerCase()}.`;
+  else diag = `Zone nécessitant une attention prioritaire, en particulier sur : ${weakest.l.toLowerCase()}.`;
+  return {global, subs, diag};
+}
 
 function sectionDR(){
   if(!DATA.penetration || !DATA.pen_plaques){
@@ -1348,11 +1377,20 @@ function sectionDRGrid(){
   const tauxTable = rankedByTaux.map((c,i)=>`<tr><td>${i+1}</td><td style="color:var(--text)">${c.dr}</td><td>${pct(c.taux)}</td></tr>`).join('');
   const plaquesTable = rankedByPlaques.map((c,i)=>`<tr><td>${i+1}</td><td style="color:var(--text)">${c.dr}</td><td>${fmt(c.plaques)}</td></tr>`).join('');
 
-  const cardsHtml = cards.map(c=>`
-    <div class="panel" style="cursor:pointer;" onclick="selectDR('${c.dr}')">
+  const myDR = getMyDR();
+  const cardsHtml = cards.map(c=>{
+    const health = computeDRHealthScore(c);
+    const healthColor = health.global>=75?'#16a34a':health.global>=50?'#eab308':'#dc2626';
+    const isMine = c.dr===myDR;
+    return `
+    <div class="panel" style="cursor:pointer; ${isMine?'border:1.5px solid var(--cyan-glow);':''}" onclick="selectDR('${c.dr}')">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-        <h2 style="margin:0;">${medal[c.dr]||''} ${c.dr}</h2>
+        <h2 style="margin:0;">${medal[c.dr]||''} ${c.dr} ${isMine?'⭐':''}</h2>
         <span class="tag ${c.taux>=60?'tag-good':c.taux>=45?'tag-warn':'tag-bad'}">${pct(c.taux)}</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px; padding:6px 8px; background:var(--bg-elev); border-radius:8px;">
+        <span style="font-weight:800; font-size:15px; color:${healthColor};">${health.global}/100</span>
+        <span class="sub" style="font-size:11px;">Score de santé de la zone</span>
       </div>
       <table>
         <tr><td>EQL</td><td style="text-align:right">${fmt(c.eql)}</td></tr>
@@ -1362,11 +1400,13 @@ function sectionDRGrid(){
         ${c.sc!=null?`<tr><td>Sans constitution</td><td style="text-align:right">${fmt(c.sc)}</td></tr>`:''}
       </table>
       <p class="sub" style="margin-top:8px;">Cliquer pour voir le détail complet →</p>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   return `
   <div class="topbar">
     <div><h1>Zones DR</h1><p>Cliquez sur votre zone pour voir toutes les informations qui la concernent</p></div>
+    ${myDR?`<div class="topbar-right"><button class="btn-primary" onclick="goToMyDR()">⭐ Aller à ma zone (${myDR})</button></div>`:''}
   </div>
 
   <div class="grid-3" style="margin-bottom:14px;">
@@ -1396,17 +1436,18 @@ function sectionDRDetail(dr){
   const tauxMoyenPlaque = (PP.tauxMoyenParDR.find(r=>r[0]===dr)||[dr,null])[1];
 
   // communes de cette zone (issues de la page Pénétration FTTH / Commune)
-  const communes = (P.tauxRows||[]).filter(r=>r.drv===dr).sort((a,b)=>(b.tauxCur||0)-(a.tauxCur||0));
+  const normDR = s => (s==null?'':String(s)).trim().toUpperCase();
+  const communes = (P.tauxRows||[]).filter(r=>normDR(r.drv)===normDR(dr)).sort((a,b)=>(b.tauxCur||0)-(a.tauxCur||0));
 
   // plaques de cette zone (issues de la base plaques complète), triées par taux croissant (les plus faibles en premier)
-  const plaques = DATA.plaques.filter(p=>p.zone===dr).sort((a,b)=>a.taux-b.taux);
+  const plaques = DATA.plaques.filter(p=>normDR(p.zone)===normDR(dr)).sort((a,b)=>a.taux-b.taux);
 
   // PBO à zéro client de cette zone
-  const pboZero = DATA.pbo_zero ? DATA.pbo_zero.rows.filter(r=>r.dr===dr) : [];
+  const pboZero = DATA.pbo_zero ? DATA.pbo_zero.rows.filter(r=>normDR(r.dr)===normDR(dr)) : [];
   const pboZeroBrins = pboZero.reduce((s,r)=>s+r.brins,0);
 
   // clients sans constitution de cette zone
-  const scRows = DATA.sans_constitution ? DATA.sans_constitution.evolution.filter(r=>r.zone===dr).sort((a,b)=>b.cur-a.cur) : [];
+  const scRows = DATA.sans_constitution ? DATA.sans_constitution.evolution.filter(r=>normDR(r.zone)===normDR(dr)).sort((a,b)=>b.cur-a.cur) : [];
   const scTotal = scRows.reduce((s,r)=>s+r.cur,0);
 
   const communesRows = communes.map(c=>`
@@ -1428,10 +1469,28 @@ function sectionDRDetail(dr){
       <td class="${r.ecart>0?'down':'up'}">${r.ecart>=0?'+':''}${fmt(r.ecart)}</td></tr>`).join('')
     || `<tr><td colspan="3" style="color:var(--text-dim)">Aucune donnée sans constitution pour cette zone.</td></tr>`;
 
+  const health = computeDRHealthScore({dr, eql, racc, taux, pboZero:[dr, pboZero.length, pboZeroBrins], sc: scTotal});
+  const healthColor = health.global>=75?'#16a34a':health.global>=50?'#eab308':'#dc2626';
+  const isMyDR = getMyDR()===dr;
+
   return `
   <div class="topbar">
     <div><h1>Zone ${dr}</h1><p>Toutes les informations concernant cette zone, en un seul endroit</p></div>
-    <div class="topbar-right"><button class="btn-primary" onclick="backToDRGrid()">← Toutes les zones</button></div>
+    <div class="topbar-right" style="display:flex; gap:8px;">
+      <button class="import-btn" onclick="setMyDR('${dr}'); render('dr');">${isMyDR?'⭐ Ma zone':'☆ Définir comme ma zone'}</button>
+      <button class="btn-primary" onclick="backToDRGrid()">← Toutes les zones</button>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px; display:flex; align-items:center; gap:18px;">
+    <div style="flex:0 0 auto; width:78px; height:78px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:22px; color:#fff; background:conic-gradient(${healthColor} ${health.global*3.6}deg, var(--bg-elev) 0deg);">
+      <div style="width:60px; height:60px; border-radius:50%; background:var(--bg-panel); display:flex; align-items:center; justify-content:center; color:${healthColor};">${health.global}</div>
+    </div>
+    <div>
+      <h2 style="margin-bottom:4px;">Score de santé de la zone</h2>
+      <p style="color:var(--text-dim); font-size:13px; line-height:1.5; margin:0;">${health.diag}</p>
+      <p class="sub" style="margin-top:6px;">Détail : ${health.subs.map(s=>`${s.l} ${Math.round(s.v)}/100`).join(' · ')}</p>
+    </div>
   </div>
 
   <div class="grid-3" style="margin-bottom:14px;">
