@@ -649,6 +649,7 @@ function buildPenetrationData(plaques, communesAOA, fictifsAOA, clientAOA, curWe
     tauxCur: tauxPenCur, tauxPrev: tauxPenPrev, tauxEvolution,
     eqlCur: globalCur.eql, eqlPrev: globalPrev.eql,
     totalClientCur, enCoursFiabilisationCur,
+    totalClientPrev: null, enCoursFiabilisationPrev: null, // renseignés côté serveur via l'historique (voir index.js)
     raccInclCur, raccInclPrev,
     sansConstCur, sansConstPrev,
     // Pourcentage_FI = NB_FI / Clients_Raccordés (racc brut, hors FI) — formule DAX fournie
@@ -712,4 +713,4 @@ function buildDataFromWorkbook(wb){
   };
 }
 
-module.exports = { buildDataFromWorkbook, buildPBOZeroData, buildPenetrationBelow50Data };
+module.exports = { buildDataFromWorkbook, buildPBOZeroData, buildPenetrationBelow50Data, round2 };
