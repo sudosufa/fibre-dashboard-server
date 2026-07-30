@@ -632,6 +632,7 @@ body[data-theme="light"] .msg.user{color:#04413a;}
       <div class="nav-item" data-section="rapport"><span class="nav-ic">📄</span><span class="label">Rapport IA</span></div>
       <div class="nav-item" data-section="kpis"><span class="nav-ic">📊</span><span class="label">KPIs</span></div>
       <div class="nav-item" data-section="regions"><span class="nav-ic">🗺️</span><span class="label">Régions</span></div>
+      <div class="nav-item" data-section="dr"><span class="nav-ic">🏢</span><span class="label">Zones DR</span></div>
       <div class="nav-item" data-section="comparateur"><span class="nav-ic">⚖️</span><span class="label">Comparateur</span></div>
       <div class="nav-item" data-section="plaques"><span class="nav-ic">🗂️</span><span class="label">Base Plaques</span></div>
       <div class="nav-item" data-section="favoris"><span class="nav-ic">⭐</span><span class="label">Favoris</span><span class="nav-badge" id="favoris-badge" style="display:none">0</span></div>
@@ -765,6 +766,7 @@ const CMDK_PAGES = [
   {id:'rapport', label:'Rapport IA', ic:'📄'},
   {id:'kpis', label:'KPIs', ic:'📊'},
   {id:'regions', label:'Régions', ic:'🗺️'},
+  {id:'dr', label:'Zones DR', ic:'🏢'},
   {id:'comparateur', label:'Comparateur de régions', ic:'⚖️'},
   {id:'plaques', label:'Base Plaques', ic:'🗂️'},
   {id:'favoris', label:'Favoris', ic:'⭐'},
@@ -1306,6 +1308,188 @@ function sectionRegions(){
       <h2>10 communes à renforcer</h2>
       <p class="sub">Taux de pénétration le plus faible</p>
       <table><thead><tr><th>#</th><th>Commune</th><th>Région</th><th>Taux</th></tr></thead><tbody>${botRows}</tbody></table>
+    </div>
+  </div>`;
+}
+
+/* ================== Section "Zones DR" ==================
+   Demandée par le manager : chaque DR (DR1, DR2, DRC, DRE, DRN, DRS, DRSE,
+   DRT) clique sur SA zone et voit tout ce qui la concerne — regroupé depuis
+   TOUTES les pages du dashboard (pénétration, plaques, PBO zéro, sans
+   constitution) en un seul endroit, au lieu d'avoir à naviguer partout. */
+
+let selectedDR = null;
+function selectDR(dr){ selectedDR = dr; render('dr'); window.scrollTo({top:0, behavior:'smooth'}); }
+function backToDRGrid(){ selectedDR = null; render('dr'); }
+
+function sectionDR(){
+  if(!DATA.penetration || !DATA.pen_plaques){
+    return `<div class="topbar"><div><h1>Zones DR</h1><p>Importez un classeur pour voir le détail par zone DR.</p></div></div>`;
+  }
+  return selectedDR ? sectionDRDetail(selectedDR) : sectionDRGrid();
+}
+
+function sectionDRGrid(){
+  const P = DATA.penetration, PP = DATA.pen_plaques;
+  const plaquesMap = Object.fromEntries(PP.plaquesParDR);
+  const pboZeroMap = DATA.pbo_zero ? Object.fromEntries(DATA.pbo_zero.parDR.map(r=>[r[0], r])) : {};
+  const scMap = DATA.sans_constitution ? Object.fromEntries(DATA.sans_constitution.parDR) : {};
+
+  const cards = P.drRanking.map(([dr,eql,racc])=>{
+    const taux = eql ? racc/eql*100 : 0;
+    return {dr, eql, racc, taux, plaques: plaquesMap[dr]||0, pboZero: pboZeroMap[dr], sc: scMap[dr]};
+  });
+  const rankedByRacc = [...cards].sort((a,b)=>b.racc-a.racc);
+  const rankedByTaux = [...cards].sort((a,b)=>b.taux-a.taux);
+  const rankedByPlaques = [...cards].sort((a,b)=>b.plaques-a.plaques);
+  const medal = {}; rankedByTaux.slice(0,3).forEach((c,i)=>{ medal[c.dr] = ['🥇','🥈','🥉'][i]; });
+
+  const raccTable = rankedByRacc.map((c,i)=>`<tr><td>${i+1}</td><td style="color:var(--text)">${c.dr}</td><td>${fmt(c.racc)}</td></tr>`).join('');
+  const tauxTable = rankedByTaux.map((c,i)=>`<tr><td>${i+1}</td><td style="color:var(--text)">${c.dr}</td><td>${pct(c.taux)}</td></tr>`).join('');
+  const plaquesTable = rankedByPlaques.map((c,i)=>`<tr><td>${i+1}</td><td style="color:var(--text)">${c.dr}</td><td>${fmt(c.plaques)}</td></tr>`).join('');
+
+  const cardsHtml = cards.map(c=>`
+    <div class="panel" style="cursor:pointer;" onclick="selectDR('${c.dr}')">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <h2 style="margin:0;">${medal[c.dr]||''} ${c.dr}</h2>
+        <span class="tag ${c.taux>=60?'tag-good':c.taux>=45?'tag-warn':'tag-bad'}">${pct(c.taux)}</span>
+      </div>
+      <table>
+        <tr><td>EQL</td><td style="text-align:right">${fmt(c.eql)}</td></tr>
+        <tr><td>Raccordés</td><td style="text-align:right">${fmt(c.racc)}</td></tr>
+        <tr><td>Plaques</td><td style="text-align:right">${fmt(c.plaques)}</td></tr>
+        ${c.pboZero?`<tr><td>PBO zéro client</td><td style="text-align:right" class="down">${fmt(c.pboZero[1])}</td></tr>`:''}
+        ${c.sc!=null?`<tr><td>Sans constitution</td><td style="text-align:right">${fmt(c.sc)}</td></tr>`:''}
+      </table>
+      <p class="sub" style="margin-top:8px;">Cliquer pour voir le détail complet →</p>
+    </div>`).join('');
+
+  return `
+  <div class="topbar">
+    <div><h1>Zones DR</h1><p>Cliquez sur votre zone pour voir toutes les informations qui la concernent</p></div>
+  </div>
+
+  <div class="grid-3" style="margin-bottom:14px;">
+    <div class="panel">
+      <h2>Classement DR par clients raccordés</h2>
+      <table><thead><tr><th>#</th><th>DR</th><th>Raccordés</th></tr></thead><tbody>${raccTable}</tbody></table>
+    </div>
+    <div class="panel">
+      <h2>Classement DR par taux de pénétration</h2>
+      <table><thead><tr><th>#</th><th>DR</th><th>Taux</th></tr></thead><tbody>${tauxTable}</tbody></table>
+    </div>
+    <div class="panel">
+      <h2>Plaques par zone DR</h2>
+      <table><thead><tr><th>#</th><th>DR</th><th>Plaques</th></tr></thead><tbody>${plaquesTable}</tbody></table>
+    </div>
+  </div>
+
+  <div class="grid-3">${cardsHtml}</div>`;
+}
+
+function sectionDRDetail(dr){
+  const P = DATA.penetration, PP = DATA.pen_plaques;
+  const ranking = P.drRanking.find(r=>r[0]===dr) || [dr,0,0];
+  const [,eql,racc] = ranking;
+  const taux = eql ? racc/eql*100 : 0;
+  const plaquesCount = (PP.plaquesParDR.find(r=>r[0]===dr)||[dr,0])[1];
+  const tauxMoyenPlaque = (PP.tauxMoyenParDR.find(r=>r[0]===dr)||[dr,null])[1];
+
+  // communes de cette zone (issues de la page Pénétration FTTH / Commune)
+  const communes = (P.tauxRows||[]).filter(r=>r.drv===dr).sort((a,b)=>(b.tauxCur||0)-(a.tauxCur||0));
+
+  // plaques de cette zone (issues de la base plaques complète), triées par taux croissant (les plus faibles en premier)
+  const plaques = DATA.plaques.filter(p=>p.zone===dr).sort((a,b)=>a.taux-b.taux);
+
+  // PBO à zéro client de cette zone
+  const pboZero = DATA.pbo_zero ? DATA.pbo_zero.rows.filter(r=>r.dr===dr) : [];
+  const pboZeroBrins = pboZero.reduce((s,r)=>s+r.brins,0);
+
+  // clients sans constitution de cette zone
+  const scRows = DATA.sans_constitution ? DATA.sans_constitution.evolution.filter(r=>r.zone===dr).sort((a,b)=>b.cur-a.cur) : [];
+  const scTotal = scRows.reduce((s,r)=>s+r.cur,0);
+
+  const communesRows = communes.map(c=>`
+    <tr><td style="color:var(--text)">${c.nom}</td><td>${fmt(c.eqlCur)}</td><td>${fmt(c.raccCur)}</td>
+      <td class="${c.tauxCur>=60?'up':c.tauxCur>=40?'':'down'}">${c.tauxCur!=null?pct(c.tauxCur):'—'}</td></tr>`).join('')
+    || `<tr><td colspan="4" style="color:var(--text-dim)">Aucune commune trouvée pour cette zone.</td></tr>`;
+
+  const plaquesRows = plaques.slice(0,200).map(p=>`
+    <tr class="clickable-row" onclick="openPlaqueModal('${p.plaque}')">
+      <td style="color:var(--text)">${p.plaque}</td><td>${p.commune}</td><td>${fmt(p.eql)}</td>
+      <td class="${p.taux>=60?'up':p.taux>=40?'':'down'}">${pct(p.taux)}</td><td>${pct(p.pbo)}</td><td>${p.age} mois</td></tr>`).join('');
+
+  const pboZeroRows = pboZero.slice(0,100).map(r=>`
+    <tr><td style="color:var(--text)">${r.plaque}</td><td>${r.pbo}</td><td>${fmt(r.brins)}</td></tr>`).join('')
+    || `<tr><td colspan="3" style="color:var(--text-dim)">Aucun PBO à zéro client dans cette zone.</td></tr>`;
+
+  const scTopRows = scRows.slice(0,15).map(r=>`
+    <tr><td style="color:var(--text)">${r.plaque}</td><td>${fmt(r.cur)}</td>
+      <td class="${r.ecart>0?'down':'up'}">${r.ecart>=0?'+':''}${fmt(r.ecart)}</td></tr>`).join('')
+    || `<tr><td colspan="3" style="color:var(--text-dim)">Aucune donnée sans constitution pour cette zone.</td></tr>`;
+
+  return `
+  <div class="topbar">
+    <div><h1>Zone ${dr}</h1><p>Toutes les informations concernant cette zone, en un seul endroit</p></div>
+    <div class="topbar-right"><button class="btn-primary" onclick="backToDRGrid()">← Toutes les zones</button></div>
+  </div>
+
+  <div class="grid-3" style="margin-bottom:14px;">
+    <div class="panel">
+      <h2>Pénétration</h2>
+      <table>
+        <tr><td>Taux</td><td style="text-align:right"><span class="tag ${taux>=60?'tag-good':taux>=45?'tag-warn':'tag-bad'}">${pct(taux)}</span></td></tr>
+        <tr><td>EQL</td><td style="text-align:right">${fmt(eql)}</td></tr>
+        <tr><td>Raccordés</td><td style="text-align:right">${fmt(racc)}</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Plaques</h2>
+      <table>
+        <tr><td>Nombre de plaques</td><td style="text-align:right">${fmt(plaquesCount)}</td></tr>
+        <tr><td>Taux moyen / plaque</td><td style="text-align:right">${tauxMoyenPlaque!=null?pct(tauxMoyenPlaque):'—'}</td></tr>
+        <tr><td>Communes</td><td style="text-align:right">${fmt(communes.length)}</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Points d'attention</h2>
+      <table>
+        <tr><td>PBO à zéro client</td><td style="text-align:right" class="${pboZero.length?'down':''}">${fmt(pboZero.length)} (${fmt(pboZeroBrins)} brins)</td></tr>
+        <tr><td>Clients sans constitution</td><td style="text-align:right">${fmt(scTotal)}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px;">
+    <h2>Communes de la zone ${dr}</h2>
+    <p class="sub">Triées par taux de pénétration décroissant</p>
+    <div style="max-height:380px; overflow-y:auto;">
+      <table><thead><tr><th>Commune</th><th>EQL</th><th>Raccordés</th><th>Taux</th></tr></thead><tbody>${communesRows}</tbody></table>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:14px;">
+    <h2>Plaques de la zone ${dr} (${fmt(plaques.length)})</h2>
+    <p class="sub">Triées par taux croissant — les plus faibles en premier${plaques.length>200?' (200 premières affichées)':''}</p>
+    <div style="max-height:420px; overflow-y:auto;">
+      <table><thead><tr><th>Plaque</th><th>Commune</th><th>EQL</th><th>Taux</th><th>PBO sat.</th><th>Âge</th></tr></thead><tbody>${plaquesRows}</tbody></table>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h2>PBO à zéro client — zone ${dr}</h2>
+      <p class="sub">${fmt(pboZero.length)} PBO, ${fmt(pboZeroBrins)} brins inexploités</p>
+      <div style="max-height:320px; overflow-y:auto;">
+        <table><thead><tr><th>Plaque</th><th>PBO</th><th>Brins</th></tr></thead><tbody>${pboZeroRows}</tbody></table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>Clients sans constitution — zone ${dr}</h2>
+      <p class="sub">Top 15 plaques, ${fmt(scTotal)} au total</p>
+      <div style="max-height:320px; overflow-y:auto;">
+        <table><thead><tr><th>Plaque</th><th>Actuel</th><th>Écart</th></tr></thead><tbody>${scTopRows}</tbody></table>
+      </div>
     </div>
   </div>`;
 }
@@ -1945,8 +2129,8 @@ function sectionPenetrationCommunes(){
         </div>
         <div class="pen-kpi-grid">
           <div class="pen-kpi"><div class="v">${fmt(P.eqlPrev)}</div><div class="l">EQL en ${prevW}</div></div>
-          <div class="pen-kpi" style="cursor:pointer;" onclick="editTotalClientPrev()" title="Historique introuvable pour cette semaine — cliquer pour le renseigner manuellement">
-            <div class="v">${fmtOrDash(totalClientPrev)} ✎</div><div class="l">Total client</div>
+          <div class="pen-kpi" title="Calculé automatiquement">
+            <div class="v">${fmtOrDash(totalClientPrev)}</div><div class="l">Total client</div>
           </div>
           <div class="pen-kpi"><div class="v">${fmt(P.raccInclPrev)}</div><div class="l">Total clients raccordés</div></div>
           <div class="pen-kpi"><div class="v">${fmt(P.sansConstPrev)}</div><div class="l">Raccordés sans constitution</div></div>
@@ -2532,7 +2716,11 @@ function sectionParametres(){
     <div id="api-status" style="font-size:12px; color:var(--text-dim); margin-bottom:14px;"></div>
     <div style="border-top:1px solid var(--border-soft); padding-top:14px;">
       <h3 style="font-size:13px; margin-bottom:8px;">Publier une mise à jour (admin)</h3>
-      <p class="sub" style="margin-bottom:10px;">Envoie un fichier vers le serveur pour que toute l'équipe voie les données à jour sans rien importer.</p>
+      <p class="sub" style="margin-bottom:10px;">Envoie un fichier vers le serveur pour que toute l'équipe voie les données à jour sans rien importer. "Total client" est calculé automatiquement depuis l'onglet Client — les autres utilisateurs ne peuvent pas le modifier, seul vous le pouvez ici si besoin de le corriger.</p>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+        <input type="text" id="total-client-override" placeholder="Corriger « Total client » (optionnel, laisser vide sinon)"
+          style="flex:1; padding:9px 12px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-panel-2); color:var(--text); font-family:var(--font-mono); font-size:12.5px;">
+      </div>
       <div style="display:flex; flex-wrap:wrap; gap:8px;">
         <button class="import-btn" onclick="document.getElementById('publish-main-input').click()">📤 Publier le fichier Suivi_Taux...xlsx</button>
         <button class="import-btn" onclick="document.getElementById('publish-pbo-input').click()">📤 Publier le fichier Pénétration/PBO...xlsx</button>
@@ -2564,6 +2752,7 @@ const SECTIONS = {
   rapport: sectionRapport,
   kpis: sectionKpis,
   regions: sectionRegions,
+  dr: sectionDR,
   comparateur: sectionComparateur,
   plaques: sectionPlaques,
   favoris: sectionFavoris,
@@ -2772,10 +2961,17 @@ async function publishToServer(event, fieldName){
     const fd = new FormData();
     fd.append('password', cachedAdminPassword);
     fd.append(fieldName, file);
+    if(fieldName==='mainFile'){
+      const overrideInput = document.getElementById('total-client-override');
+      const overrideVal = overrideInput ? overrideInput.value.trim() : '';
+      if(overrideVal) fd.append('totalClientOverride', overrideVal);
+    }
     const res = await fetch(apiBase + '/api/upload', { method:'POST', body: fd });
     const json = await res.json();
     if(!res.ok) throw new Error(json.error || ('HTTP '+res.status));
     if(status) status.textContent = `Publié : semaine ${json.week} (${fmt(json.plaques)} plaques) — visible par toute l'équipe.`;
+    const overrideInput = document.getElementById('total-client-override');
+    if(overrideInput) overrideInput.value = '';
     showToast('Données publiées sur le serveur ✅', '✅');
     loadFromServer(false); // rafraîchit aussi la vue locale avec ce qui vient d'être publié
   }catch(err){
@@ -3381,6 +3577,7 @@ function buildPenetrationData(plaques, communesAOA, fictifsAOA, clientAOA, curWe
       nom, eqlCur: c?c.eql:0, raccCur: c?c.racc:0,
       tauxCur: tauxC, tauxPrev: tauxP,
       evolution: (tauxC!=null && tauxP!=null) ? tauxC-tauxP : null,
+      drv: (c&&c.drv)||(p&&p.drv)||'',
     };
   }).sort((a,b)=>a.nom.localeCompare(b.nom,'fr'));
 
