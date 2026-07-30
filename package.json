@@ -1,0 +1,13 @@
+{
+  "name": "fibre-dashboard-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "xlsx": "^0.18.5",
+    "node-fetch": "^2.7.0"
+  }
+}
