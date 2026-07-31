@@ -1472,9 +1472,12 @@ function sectionDRDetail(dr){
       <td style="color:var(--text)">${p.plaque}</td><td>${p.commune}</td><td>${fmt(p.eql)}</td>
       <td class="${p.taux>=60?'up':p.taux>=40?'':'down'}">${pct(p.taux)}</td><td>${pct(p.pbo)}</td><td>${p.age} mois</td></tr>`).join('');
 
-  const pboZeroRows = pboZero.slice(0,100).map(r=>`
-    <tr><td style="color:var(--text)">${r.plaque}</td><td>${r.pbo}</td><td>${fmt(r.brins)}</td></tr>`).join('')
-    || `<tr><td colspan="3" style="color:var(--text-dim)">Aucun PBO à zéro client dans cette zone.</td></tr>`;
+  const pboZeroSorted = [...pboZero].sort((a,b)=>b.brins-a.brins);
+  const pboZeroRows = pboZeroSorted.slice(0,150).map(r=>`
+    <tr class="clickable-row" onclick="openPlaqueModal('${r.plaque}')">
+      <td style="color:var(--text)">${r.plaque}</td><td>${r.nro||'—'}</td><td>${r.pbo}</td>
+      <td>${fmt(r.brins)}</td><td style="color:var(--text-dim); font-size:11.5px;">${r.action||'—'}</td></tr>`).join('')
+    || `<tr><td colspan="5" style="color:var(--text-dim)">Aucun PBO à zéro client dans cette zone.</td></tr>`;
 
   const scTopRows = scRows.slice(0,15).map(r=>`
     <tr><td style="color:var(--text)">${r.plaque}</td><td>${fmt(r.cur)}</td>
@@ -1484,6 +1487,27 @@ function sectionDRDetail(dr){
   const health = computeDRHealthScore({dr, eql, racc, taux, pboZero:[dr, pboZero.length, pboZeroBrins], sc: scTotal});
   const healthColor = health.global>=75?'#16a34a':health.global>=50?'#eab308':'#dc2626';
   const isMyDR = getMyDR()===dr;
+
+  // Innovation : "Solution à prendre" — un plan d'action concret et priorisé
+  // pour la zone, généré à partir de la plus grosse opportunité disponible
+  // (PBO déjà installé, sans investissement) et du risque le plus urgent
+  // (clients sans constitution), au lieu de laisser le responsable DR
+  // éplucher deux tableaux pour en déduire lui-même la priorité.
+  let drActionPlan;
+  if(pboZeroSorted.length===0 && scRows.length===0){
+    drActionPlan = `Aucun point d'attention majeur détecté sur cette zone en ce moment — RAS côté PBO inexploités et clients sans constitution.`;
+  } else {
+    const parts = [];
+    if(pboZeroSorted.length){
+      const top = pboZeroSorted[0];
+      parts.push(`<b>Priorité rapide (0 investissement)</b> : activer le PBO <b>${top.pbo}</b> sur la plaque <b>${top.plaque}</b>${top.nro?` (NRO ${top.nro})`:''} — <b>${fmt(top.brins)} brins</b> déjà câblés et inexploités, le plus gros gisement immédiat de cette zone (sur un total de ${fmt(pboZero.length)} PBO concernés, ${fmt(pboZeroBrins)} brins).`);
+    }
+    if(scRows.length){
+      const topSc = scRows[0];
+      parts.push(`<b>À sécuriser</b> : la plaque <b>${topSc.plaque}</b> concentre <b>${fmt(topSc.cur)}</b> clients raccordés mais non constitués${topSc.ecart>0?` (en hausse de +${fmt(topSc.ecart)} cette semaine — à vérifier en priorité)`:''}, sur un total de ${fmt(scTotal)} pour la zone.`);
+    }
+    drActionPlan = parts.join(' ');
+  }
 
   return `
   <div class="topbar">
@@ -1547,12 +1571,17 @@ function sectionDRDetail(dr){
     </div>
   </div>
 
+  <div class="panel" style="margin-bottom:14px; border:1px solid var(--cyan-dim);">
+    <h2>💡 Solution à prendre — zone ${dr}</h2>
+    <p style="color:var(--text-dim); font-size:13px; line-height:1.6; margin-top:6px;">${drActionPlan}</p>
+  </div>
+
   <div class="grid-2">
     <div class="panel">
       <h2>PBO à zéro client — zone ${dr}</h2>
-      <p class="sub">${fmt(pboZero.length)} PBO, ${fmt(pboZeroBrins)} brins inexploités</p>
+      <p class="sub">${fmt(pboZero.length)} PBO, ${fmt(pboZeroBrins)} brins inexploités — triés par brins décroissants</p>
       <div style="max-height:320px; overflow-y:auto;">
-        <table><thead><tr><th>Plaque</th><th>PBO</th><th>Brins</th></tr></thead><tbody>${pboZeroRows}</tbody></table>
+        <table><thead><tr><th>Plaque</th><th>NRO</th><th>PBO</th><th>Brins</th><th>Action requise</th></tr></thead><tbody>${pboZeroRows}</tbody></table>
       </div>
     </div>
     <div class="panel">
@@ -2170,7 +2199,7 @@ function sectionPenetrationCommunes(){
       <div class="pen-comment">
         <div class="ttl">Commentaire :</div>
         Entre <b>${prevW}</b> et <b>${curW}</b>, le parc FTTH a enregistré <b>${P.raccInclCur>=P.raccInclPrev?'une hausse':'une baisse'}</b> du nombre total de clients raccordés.
-        Toutefois, <b>${fmt(P.sansConstCur)}</b> clients restent encore sans constitution et nécessitent une fiabilisation.
+        Toutefois, <b>${fmtOrDash(P.enCoursFiabilisationCur)}</b> clients sont encore en cours de fiabilisation.
       </div>
     </div>
 
@@ -2613,7 +2642,7 @@ function renderPen50Table(){
     (!zone || r.zone===zone) && (!dr || r.dr===dr) && (!q || r.plaque.toLowerCase().includes(q))
   );
   tbody.innerHTML = rows.length ? rows.map(r=>`
-    <tr>
+    <tr class="clickable-row" onclick="openPlaqueModal('${r.plaque}')">
       <td>${r.plaque}</td><td>${r.dr}</td><td>${r.archi}</td>
       <td>${r.s28.toFixed(3).replace('.',',')} %</td><td>${r.s29.toFixed(3).replace('.',',')} %</td>
       <td class="${r.ecart<0?'sc-down':(r.ecart>0?'sc-up':'')}">${r.ecart>=0?'+':''}${r.ecart.toFixed(3).replace('.',',')} %</td>
