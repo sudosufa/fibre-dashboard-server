@@ -495,11 +495,26 @@ function buildPenetrationBelow50Data(wb){
   const aoa = getSheetAOA(wb, 'Pénétration < à 50%');
   if(!aoa || aoa.length<2) return null;
   const headers = aoa[0];
+
+  // Détecte dynamiquement les 2 colonnes "Taux de pénétration S##_##" au lieu
+  // de noms codés en dur (S28_26/S29_26) — sinon ça casse (NaN) dès que le
+  // fichier importé porte sur d'autres semaines.
+  const weekColRe = /^Taux de pénétration\s+S(\d{1,2})_(\d{2,4})$/i;
+  const weekCols = headers.map((h,i)=>{
+    const m = h ? weekColRe.exec(String(h).trim()) : null;
+    if(!m) return null;
+    const yy = m[2].length===2 ? '20'+m[2] : m[2];
+    return { i, header:h, wk:parseInt(m[1],10), yr:parseInt(yy,10), label:`S${m[1].padStart(2,'0')}_${yy}` };
+  }).filter(Boolean).sort((a,b)=> (a.yr*100+a.wk) - (b.yr*100+b.wk));
+  const prevCol = weekCols[0] || null;
+  const curCol = weekCols[weekCols.length-1] || null;
+  const prevLabel = prevCol ? prevCol.label : '';
+  const curLabel = curCol ? curCol.label : '';
+
   const idx = {
     plaque: headers.indexOf('Plaques'), archi: headers.indexOf('ARCHI'), dr: headers.indexOf('Zone DR'),
-    zone: headers.indexOf('Zone de couverture'), s28: headers.indexOf('Taux de pénétration S28_26'),
-    s29: headers.indexOf('Taux de pénétration S29_26'), evo: headers.indexOf("Taux d'évolution"),
-    age: headers.indexOf('Age'),
+    zone: headers.indexOf('Zone de couverture'), s28: prevCol?prevCol.i:-1, s29: curCol?curCol.i:-1,
+    evo: headers.indexOf("Taux d'évolution"), age: headers.indexOf('Age'),
   };
   const rows = [];
   for(let i=1;i<aoa.length;i++){
@@ -525,9 +540,16 @@ function buildPenetrationBelow50Data(wb){
   const communesAOA2 = getSheetAOA(wb, 'Données chiffrées par commune');
   if(communesAOA2 && communesAOA2.length>1){
     const ch = communesAOA2[0];
-    const cidx = {
-      commune: ch.indexOf('COMMUNE'), s28: ch.indexOf('Taux de pénétration S28_2026'), s29: ch.indexOf('Taux de pénétration S29_2026'),
-    };
+    // même détection dynamique ici (les colonnes portent le suffixe d'année complète sur cette feuille)
+    const weekColRe2 = /^Taux de pénétration\s+S(\d{1,2})_(\d{2,4})$/i;
+    const weekCols2 = ch.map((h,i)=>{
+      const m = h ? weekColRe2.exec(String(h).trim()) : null;
+      if(!m) return null;
+      const yy = m[2].length===2 ? '20'+m[2] : m[2];
+      return { i, wk:parseInt(m[1],10), yr:parseInt(yy,10) };
+    }).filter(Boolean).sort((a,b)=> (a.yr*100+a.wk) - (b.yr*100+b.wk));
+    const cPrevCol = weekCols2[0], cCurCol = weekCols2[weekCols2.length-1];
+    const cidx = { commune: ch.indexOf('COMMUNE'), s28: cPrevCol?cPrevCol.i:-1, s29: cCurCol?cCurCol.i:-1 };
     const communeRows = [];
     for(let i=1;i<communesAOA2.length;i++){
       const r = communesAOA2[i];
@@ -539,7 +561,7 @@ function buildPenetrationBelow50Data(wb){
     worstCommunes = communeRows.sort((a,b)=>a.s29-b.s29).slice(0,5).sort((a,b)=>b.s29-a.s29);
   }
 
-  return { rows, zonesCouverture, zonesDR, worstEvolution, worstCommunes, total: rows.length };
+  return { rows, zonesCouverture, zonesDR, worstEvolution, worstCommunes, total: rows.length, prevWeekLabel: prevLabel, curWeekLabel: curLabel };
 }
 
 function buildSansConstitutionData(fictifsAOA, curWeek, prevWeek){
