@@ -1435,12 +1435,24 @@ function sectionDRDetail(dr){
   const plaquesCount = (PP.plaquesParDR.find(r=>r[0]===dr)||[dr,0])[1];
   const tauxMoyenPlaque = (PP.tauxMoyenParDR.find(r=>r[0]===dr)||[dr,null])[1];
 
-  // communes de cette zone (issues de la page Pénétration FTTH / Commune)
-  const normDR = s => (s==null?'':String(s)).trim().toUpperCase();
-  const communes = (P.tauxRows||[]).filter(r=>normDR(r.drv)===normDR(dr)).sort((a,b)=>(b.tauxCur||0)-(a.tauxCur||0));
-
   // plaques de cette zone (issues de la base plaques complète), triées par taux croissant (les plus faibles en premier)
+  const normDR = s => (s==null?'':String(s)).trim().toUpperCase();
   const plaques = DATA.plaques.filter(p=>normDR(p.zone)===normDR(dr)).sort((a,b)=>a.taux-b.taux);
+
+  // communes de cette zone : calculées DIRECTEMENT depuis les plaques de la
+  // zone (une seule source, fiable), au lieu de faire correspondre deux listes
+  // de communes différentes (TO_Plaques vs TO_Communes) dont l'orthographe ne
+  // concordait pas toujours et faisait échouer le rapprochement.
+  const communeAgg = {};
+  plaques.forEach(p=>{
+    if(!p.commune) return;
+    if(!communeAgg[p.commune]) communeAgg[p.commune] = {eql:0, racc:0};
+    communeAgg[p.commune].eql += p.eql;
+    communeAgg[p.commune].racc += Math.round(p.eql * (p.taux/100));
+  });
+  const communes = Object.entries(communeAgg).map(([nom,v])=>({
+    nom, eqlCur: v.eql, raccCur: v.racc, tauxCur: v.eql ? v.racc/v.eql*100 : null,
+  })).sort((a,b)=>(b.tauxCur||0)-(a.tauxCur||0));
 
   // PBO à zéro client de cette zone
   const pboZero = DATA.pbo_zero ? DATA.pbo_zero.rows.filter(r=>normDR(r.dr)===normDR(dr)) : [];
