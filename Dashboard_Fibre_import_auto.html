@@ -2558,21 +2558,24 @@ function sectionPen50(){
     </div>`;
   }
 
-  const zoneOpts = PN.zonesCouverture.map(z=>`<option value="${z}">${z}</option>`).join('');
-  const drOpts = PN.zonesDR.map(z=>`<option value="${z}">${z}</option>`).join('');
+  const zoneOpts = (PN.zonesCouverture||[]).map(z=>`<option value="${z}">${z}</option>`).join('');
+  const drOpts = (PN.zonesDR||[]).map(z=>`<option value="${z}">${z}</option>`).join('');
 
-  const maxEvoAbs = Math.max(1, ...PN.worstEvolution.map(r=>Math.abs(r[1])));
-  const evoCards = PN.worstEvolution.map(([plaque,ecart])=>`
+  const worstEvolution = PN.worstEvolution||[];
+  const maxEvoAbs = Math.max(1, ...worstEvolution.map(r=>Math.abs(r[1])));
+  const evoCards = worstEvolution.map(([plaque,ecart])=>`
     <div class="p50-evo-card">
       <div class="v ${ecart<0?'sc-down':(ecart>0?'sc-up':'')}">${ecart>=0?'+':''}${ecart.toFixed(3).replace('.',',')} %</div>
       <div class="l">${plaque}</div>
     </div>`).join('') || `<p class="sub">Aucune plaque sous ce seuil.</p>`;
 
-  const maxCommune = Math.max(1, ...PN.worstCommunes.map(c=>Math.max(c.s28,c.s29)));
-  const communeBars = PN.worstCommunes.map(c=>`
+  const worstCommunes = PN.worstCommunes||[];
+  const pn50Rows = PN.rows||[];
+  const maxCommune = Math.max(1, ...worstCommunes.map(c=>Math.max(c.s28,c.s29)));
+  const communeBars = worstCommunes.map(c=>`
     <div class="p50-commune-col">
       <div class="bars">
-        <div class="bar orange" style="height:${(c.s29/maxCommune*100).toFixed(1)}%;" title="${c.s29}% (${PN.rows.length?'S29':''})"><span>${c.s29.toFixed(2).replace('.',',')} %</span></div>
+        <div class="bar orange" style="height:${(c.s29/maxCommune*100).toFixed(1)}%;" title="${c.s29}% (${pn50Rows.length?'S29':''})"><span>${c.s29.toFixed(2).replace('.',',')} %</span></div>
         <div class="bar teal" style="height:${(c.s28/maxCommune*100).toFixed(1)}%;" title="${c.s28}%"><span>${c.s28.toFixed(2).replace('.',',')} %</span></div>
       </div>
       <div class="name">${c.commune}</div>
@@ -2638,7 +2641,7 @@ function renderPen50Table(){
   const zone = (document.getElementById('p50-zone')||{}).value || '';
   const dr = (document.getElementById('p50-dr')||{}).value || '';
   const q = ((document.getElementById('p50-plaque')||{}).value || '').trim().toLowerCase();
-  const rows = PN.rows.filter(r=>
+  const rows = (PN.rows||[]).filter(r=>
     (!zone || r.zone===zone) && (!dr || r.dr===dr) && (!q || r.plaque.toLowerCase().includes(q))
   );
   tbody.innerHTML = rows.length ? rows.map(r=>`
