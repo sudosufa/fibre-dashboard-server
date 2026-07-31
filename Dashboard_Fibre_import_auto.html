@@ -2199,7 +2199,7 @@ function sectionPenetrationCommunes(){
       <div class="pen-comment">
         <div class="ttl">Commentaire :</div>
         Entre <b>${prevW}</b> et <b>${curW}</b>, le parc FTTH a enregistré <b>${P.raccInclCur>=P.raccInclPrev?'une hausse':'une baisse'}</b> du nombre total de clients raccordés.
-        Toutefois, <b>${fmtOrDash(P.enCoursFiabilisationCur)}</b> clients sont encore en cours de fiabilisation.
+        Toutefois, <b>${fmt(P.sansConstCur)}</b> clients restent encore sans constitution et nécessitent une fiabilisation.
       </div>
     </div>
 
