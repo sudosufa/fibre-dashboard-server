@@ -456,9 +456,17 @@ function buildPBOZeroData(wb){
     action: headers.indexOf('Action Requise'), commentaire: headers.indexOf('Commentaire'),
   };
   const rows = [];
+  const seenKeys = new Set();
+  let duplicatesSkipped = 0;
   for(let i=1;i<aoa.length;i++){
     const r = aoa[i];
     if(!r || r[idx.plaque]==null) continue;
+    // Le fichier source contient parfois la même ligne (plaque+PBO) dupliquée
+    // à l'identique — on ne garde que la première occurrence pour ne pas
+    // gonfler artificiellement les totaux de PBO/brins.
+    const key = r[idx.plaque] + '||' + (r[idx.pbo]||'');
+    if(seenKeys.has(key)){ duplicatesSkipped++; continue; }
+    seenKeys.add(key);
     rows.push({
       nro: r[idx.nro]||'', plaque: r[idx.plaque]||'', pbo: r[idx.pbo]||'',
       lat: idx.lat>=0 ? Number(r[idx.lat]) : null, lng: idx.lng>=0 ? Number(r[idx.lng]) : null,
@@ -506,6 +514,7 @@ function buildPBOZeroData(wb){
     totalPBO: rows.length,
     totalBrins: rows.reduce((s,r)=>s+r.brins,0),
     plaquesConcernees: Object.keys(plaqueMap).length,
+    duplicatesRemoved: duplicatesSkipped,
   };
 }
 
