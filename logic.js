@@ -451,6 +451,7 @@ function buildPBOZeroData(wb){
   const headers = aoa[0];
   const idx = {
     nro: headers.indexOf('NRO'), plaque: headers.indexOf('Plaque'), pbo: headers.indexOf('PBO'),
+    lat: headers.indexOf('Latitude'), lng: headers.indexOf('Longitude'),
     brins: headers.indexOf('Total Brins'), occ: headers.indexOf('Brins Occupés'), dr: headers.indexOf('DR'),
     action: headers.indexOf('Action Requise'), commentaire: headers.indexOf('Commentaire'),
   };
@@ -460,6 +461,7 @@ function buildPBOZeroData(wb){
     if(!r || r[idx.plaque]==null) continue;
     rows.push({
       nro: r[idx.nro]||'', plaque: r[idx.plaque]||'', pbo: r[idx.pbo]||'',
+      lat: idx.lat>=0 ? Number(r[idx.lat]) : null, lng: idx.lng>=0 ? Number(r[idx.lng]) : null,
       brins: Number(r[idx.brins])||0, dr: r[idx.dr]||'(non renseigné)',
       action: r[idx.action]||'', commentaire: r[idx.commentaire]||'',
     });
@@ -473,14 +475,34 @@ function buildPBOZeroData(wb){
 
   const plaqueMap = {};
   rows.forEach(r=>{
-    if(!plaqueMap[r.plaque]) plaqueMap[r.plaque] = {count:0, brins:0, dr:r.dr};
+    if(!plaqueMap[r.plaque]) plaqueMap[r.plaque] = {count:0, brins:0, dr:r.dr, lats:[], lngs:[], nro:r.nro};
     plaqueMap[r.plaque].count += 1; plaqueMap[r.plaque].brins += r.brins;
+    // Le Sénégal est entièrement compris entre ~10-18°N et -19/-10°E : toute
+    // coordonnée hors de cette zone (ou 0/inversée) est une erreur de saisie
+    // dans le fichier source et est écartée du calcul de position — sans
+    // perdre les brins/PBO de la ligne, comptés normalement par ailleurs.
+    const latOk = isFinite(r.lat) && r.lat>=10 && r.lat<=18;
+    const lngOk = isFinite(r.lng) && r.lng>=-19 && r.lng<=-10;
+    if(latOk && lngOk){
+      plaqueMap[r.plaque].lats.push(r.lat);
+      plaqueMap[r.plaque].lngs.push(r.lng);
+    }
   });
   const topPlaques = Object.entries(plaqueMap).map(([p,v])=>[p, v.count, v.brins, v.dr])
     .sort((a,b)=>b[2]-a[2]).slice(0,15);
 
+  // Points pour la carte : un marqueur par plaque (position moyenne de ses
+  // PBO à 0 client), avec le total de brins et de PBO concernés.
+  const mapPoints = Object.entries(plaqueMap)
+    .filter(([,v])=>v.lats.length && v.lngs.length)
+    .map(([p,v])=>({
+      plaque: p, nro: v.nro, dr: v.dr, count: v.count, brins: v.brins,
+      lat: v.lats.reduce((a,b)=>a+b,0)/v.lats.length,
+      lng: v.lngs.reduce((a,b)=>a+b,0)/v.lngs.length,
+    }));
+
   return {
-    rows, parDR, topPlaques,
+    rows, parDR, topPlaques, mapPoints,
     totalPBO: rows.length,
     totalBrins: rows.reduce((s,r)=>s+r.brins,0),
     plaquesConcernees: Object.keys(plaqueMap).length,
