@@ -56,6 +56,10 @@ async function upstash(command) {
 }
 
 const path = require('path');
+const fs = require('fs');
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const FILENAMES_KEY = 'fibre_dashboard_source_filenames'; // { main: "Suivi_...xlsx", pbo: "Fichier_...xlsx" }
 
 app.get('/', (req, res) => {
   res.set('Cache-Control', 'no-cache');
@@ -74,6 +78,21 @@ app.get('/api/data', async (req, res) => {
   }
 });
 
+// Téléchargement du fichier Excel exactement tel qu'il a été publié — aucune
+// transformation, le fichier brut est renvoyé tel quel (octet pour octet).
+app.get('/api/download/:which', async (req, res) => {
+  const which = req.params.which === 'pbo' ? 'pbo' : (req.params.which === 'main' ? 'main' : null);
+  if (!which) return res.status(400).json({ error: 'Paramètre invalide (attendu: main ou pbo).' });
+  const filePath = path.join(UPLOADS_DIR, which + '.xlsx');
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: "Aucun fichier n'a encore été publié pour cette catégorie." });
+  let originalName = which + '.xlsx';
+  try {
+    const raw = await upstash(['GET', FILENAMES_KEY]);
+    if (raw) { const names = JSON.parse(raw); if (names[which]) originalName = names[which]; }
+  } catch (e) { /* tant pis, on garde le nom générique */ }
+  res.download(filePath, originalName);
+});
+
 app.post(
   '/api/upload',
   upload.fields([
@@ -89,6 +108,23 @@ app.post(
       const mainFile = req.files && req.files.mainFile && req.files.mainFile[0];
       const pboFile = req.files && req.files.pboFile && req.files.pboFile[0];
       if (!mainFile && !pboFile) return res.status(400).json({ error: 'Aucun fichier reçu.' });
+
+      // Sauvegarde du fichier brut tel quel (aucune transformation), pour
+      // permettre son téléchargement identique plus tard via /api/download/*.
+      let fileNames = {};
+      try {
+        const rawNames = await upstash(['GET', FILENAMES_KEY]);
+        if (rawNames) fileNames = JSON.parse(rawNames);
+      } catch (e) { /* première utilisation */ }
+      if (mainFile) {
+        fs.writeFileSync(path.join(UPLOADS_DIR, 'main.xlsx'), mainFile.buffer);
+        fileNames.main = mainFile.originalname;
+      }
+      if (pboFile) {
+        fs.writeFileSync(path.join(UPLOADS_DIR, 'pbo.xlsx'), pboFile.buffer);
+        fileNames.pbo = pboFile.originalname;
+      }
+      await upstash(['SET', FILENAMES_KEY, JSON.stringify(fileNames)]);
 
       let data;
       if (mainFile) {
@@ -149,6 +185,7 @@ app.post(
         } catch (e) { /* pas grave si indisponible */ }
       }
 
+      data.sourceFileNames = fileNames;
       await upstash(['SET', DATA_KEY, JSON.stringify(data)]);
       res.json({ ok: true, week: data.week, plaques: data.plaques.length });
     } catch (err) {
