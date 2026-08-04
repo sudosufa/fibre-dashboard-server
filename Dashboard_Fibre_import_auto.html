@@ -1510,8 +1510,8 @@ function sectionDRGrid(){
   <div class="panel" style="margin-bottom:14px;">
     <h2 style="text-align:left;">📊 Tableau comparatif complet — toutes les zones DR</h2>
     <p class="sub">Une seule source de vérité : plaques (infrastructure), EQL/Raccordés/Taux (pénétration), PBO à 0 client et brins (capacité dormante), et le ratio PBO/plaque qui révèle la concentration réelle du problème par zone</p>
-    <div class="pen-table-wrap" style="max-height:400px; margin-top:8px;">
-      <table class="pen-table">
+    <div style="max-height:400px; overflow-y:auto; margin-top:8px;">
+      <table>
         <thead><tr><th>DR</th><th>Plaques</th><th>EQL</th><th>Raccordés</th><th>Taux</th><th>PBO 0-client</th><th>Brins inexploités</th><th>PBO/plaque</th><th>Sans constitution</th></tr></thead>
         <tbody>${comparatifRows}</tbody>
       </table>
@@ -2746,9 +2746,9 @@ function sectionMarketing(){
   const maxPotentiel = Math.max(1, ...communesPotentiel.map(c=>c.potentiel));
   const communesRows = communesPotentiel.map(c=>`
     <div class="pen-bar-row">
-      <div class="name">${c.nom} <span class="sub" style="font-size:10px;">(${pct(c.tauxCur||0)})</span></div>
-      <div class="pen-bar-track"><div class="pen-bar-fill orange" style="width:${(c.potentiel/maxPotentiel*100).toFixed(1)}%"></div></div>
-      <span class="pen-bar-label">${fmt(c.potentiel)} lignes</span>
+      <div class="name" style="color:var(--text) !important;">${c.nom} <span style="font-size:10px; color:var(--text-dim); font-weight:600; text-transform:none;">(${pct(c.tauxCur||0)})</span></div>
+      <div class="pen-bar-track" style="background:var(--bg-elev);"><div class="pen-bar-fill orange" style="width:${(c.potentiel/maxPotentiel*100).toFixed(1)}%"></div></div>
+      <span class="pen-bar-label" style="color:var(--text) !important;">${fmt(c.potentiel)} lignes</span>
     </div>`).join('');
 
   // Zones récemment déployées à faible taux : nouvelles zones à faire connaître
