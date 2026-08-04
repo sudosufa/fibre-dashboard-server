@@ -573,6 +573,10 @@ body[data-theme="light"] .msg.user{color:#04413a;}
 .map-toolbar{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap;}
 .map-toolbar input{flex:1; max-width:320px; padding:8px 12px; border-radius:9px; border:1px solid #e2e8f0; font-size:12.5px; background:#fff;}
 .map-hint{font-size:11px; color:#94a3b8; white-space:nowrap;}
+.map-cluster-explain{
+  background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; border-radius:10px;
+  padding:9px 14px; font-size:12.5px; margin-bottom:12px; line-height:1.5;
+}
 .map-locate-btn{padding:8px 14px; border-radius:9px; border:1px solid #2563eb; background:#eff6ff; color:#2563eb; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;}
 .map-locate-btn:hover{background:#dbeafe;}
 .map-nearby-panel{background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:10px 12px; margin-bottom:8px;}
@@ -2867,6 +2871,8 @@ function sectionCarte(){
     <div class="topbar-right"><button class="btn-primary" onclick="toggleMapFullscreen()">⛶ Plein écran</button></div>
   </div>
 
+  <div class="map-cluster-explain">💡 Les cercles verts chiffrés regroupent plusieurs PBO proches (zoom faible). <b>Cliquez sur un cercle pour zoomer</b> : il se divise en groupes plus petits, jusqu'aux points rouges individuels au zoom maximum.</div>
+
   <div class="map-layout">
     <div class="map-sidebar">
       <div class="map-panel">
@@ -2902,7 +2908,7 @@ function sectionCarte(){
       <div class="map-toolbar">
         <input type="text" id="map-search" placeholder="🔍 Rechercher une plaque..." oninput="searchMapPlaque(this.value)">
         <button class="map-locate-btn" onclick="locateMeOnMap()">🧭 Ma position</button>
-        <div class="map-hint">🖱️ Molette pour zoomer · clic sur un point pour le détail</div>
+        <div class="map-hint">🖱️ Les cercles chiffrés regroupent plusieurs PBO proches — cliquez dessus pour zoomer et voir chaque point</div>
       </div>
       <div id="map-nearby-panel" class="map-nearby-panel" style="display:none;"></div>
       <div class="map-canvas-wrap" id="map-canvas-wrap">
@@ -2943,7 +2949,11 @@ async function initMapPanZoom(){
   L.control.layers({ 'Plan': streets, 'Satellite': satellite }, {}, { position:'topright', collapsed:true }).addTo(leafletMap);
 
   leafletClusterGroup = L.markerClusterGroup ? L.markerClusterGroup({
-    maxClusterRadius: 45,
+    maxClusterRadius: 30,
+    disableClusteringAtZoom: 12,
+    spiderfyOnMaxZoom: true,
+    zoomToBoundsOnClick: true,
+    showCoverageOnHover: false,
     iconCreateFunction: (cluster)=>{
       const n = cluster.getChildCount();
       const size = n<10?32:n<50?40:48;
