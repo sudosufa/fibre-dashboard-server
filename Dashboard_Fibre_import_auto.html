@@ -3606,12 +3606,29 @@ const GH_PBO_FILE_PATH = 'data/pbo.xlsx';
 
 function getGithubConfig(){
   try{
-    return {
+    const saved = {
       owner: (localStorage.getItem(GH_OWNER_KEY)||'').trim(),
       repo: (localStorage.getItem(GH_REPO_KEY)||'').trim(),
-      branch: (localStorage.getItem(GH_BRANCH_KEY)||'main').trim() || 'main',
+      branch: (localStorage.getItem(GH_BRANCH_KEY)||'').trim(),
     };
-  }catch(e){ return {owner:'', repo:'', branch:'main'}; }
+    if(saved.owner && saved.repo){
+      return { owner: saved.owner, repo: saved.repo, branch: saved.branch || 'main' };
+    }
+  }catch(e){}
+  // Détection automatique : si le dashboard est ouvert via son propre lien
+  // GitHub Pages (https://OWNER.github.io/REPO/...), on en déduit directement
+  // le dépôt — aucun utilisateur (à part l'admin, une fois) n'a besoin de
+  // remplir quoi que ce soit.
+  try{
+    const host = location.hostname; // ex. sudosufa.github.io
+    const m = /^([^.]+)\.github\.io$/.exec(host);
+    if(m){
+      const owner = m[1];
+      const repo = (location.pathname.split('/').filter(Boolean)[0]) || '';
+      if(repo) return { owner, repo, branch: 'main' };
+    }
+  }catch(e){}
+  return { owner:'', repo:'', branch:'main' };
 }
 function getGithubToken(){
   try{ return (localStorage.getItem(GH_TOKEN_KEY)||'').trim(); }catch(e){ return ''; }
