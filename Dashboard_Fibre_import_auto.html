@@ -248,6 +248,9 @@ ul.bullets li::before{content:'▸'; position:absolute; left:0; color:var(--cyan
 .gov-stat .l{font-size:11px; color:var(--text-dim); margin-top:4px;}
 
 .assistant-box{display:flex; flex-direction:column; height:520px;}
+.assistant-fallback{margin-top:10px; padding:10px 14px; border-radius:10px; background:var(--bg-panel); border:1px solid var(--border-soft);}
+.assistant-fallback summary{cursor:pointer; font-size:12px; color:var(--text-dim); font-weight:600;}
+.assistant-fallback summary:hover{color:var(--text);}
 .assistant-log{flex:1; overflow-y:auto; padding:6px 4px; display:flex; flex-direction:column; gap:12px;}
 .msg{max-width:78%; padding:11px 14px; border-radius:12px; font-size:13px; line-height:1.55;}
 .msg.user{align-self:flex-end; background:var(--cyan-dim); color:#dffaf4; border:1px solid rgba(45,212,191,0.3);}
@@ -3355,15 +3358,6 @@ function sectionAssistant(){
   <div class="topbar">
     <div><h1>Assistant IA</h1><p>Posez une question en langage naturel — il connaît toutes les pages du dashboard pour la semaine ${DATA.week}</p></div>
   </div>
-  <div class="panel" style="margin-bottom:14px;">
-    <h2 style="margin-bottom:8px;">Clé API Groq</h2>
-    <p class="sub" style="margin-bottom:12px;">Ce tableau de bord fonctionne entièrement en local et communique directement avec l'API du modèle Llama 3.3 depuis votre navigateur. Votre clé API n'est jamais transmise à un serveur tiers : elle est stockée uniquement sur votre ordinateur via le stockage local (localStorage).</p>
-    <div class="assistant-input" style="margin-top:0;">
-      <input type="password" id="api-key-input" placeholder="gsk_..." autocomplete="off">
-      <button id="api-key-save" onclick="saveApiKey()">Enregistrer</button>
-    </div>
-    <div id="api-key-status" style="margin-top:10px; font-size:11.5px; color:var(--text-dim); font-family:var(--font-mono);"></div>
-  </div>
   <div class="panel assistant-box">
     <div class="assistant-log" id="assistant-log">
       <div class="msg bot">Bonjour 👋 Je connais toutes les pages de ce dashboard — pénétration FTTH, clients sans constitution, PBO à zéro client, alertes intelligentes, anomalies, régions — pour la semaine ${DATA.week}. Posez-moi n'importe quelle question, je croise les données pour vous.</div>
@@ -3383,47 +3377,62 @@ function sectionAssistant(){
       <input type="text" id="assistant-input" placeholder="Ex : quelles communes sont les plus faibles à Ziguinchor ?" onkeydown="if(event.key==='Enter') submitAssistant()">
       <button id="assistant-send" onclick="submitAssistant()">Envoyer</button>
     </div>
+  </div>
+  <div class="panel assistant-fallback" style="margin-top:10px;">
+    <h3 style="font-size:13px; margin-bottom:6px;">🔑 Votre clé API Gemini (gratuite)</h3>
+    <p class="sub" style="margin:0 0 10px 0;">Chaque personne qui veut utiliser l'Assistant IA doit renseigner sa propre clé, gratuite, en 1 minute sur <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--cyan-glow)">aistudio.google.com/apikey</a>. Elle reste uniquement dans votre navigateur (jamais partagée, jamais envoyée ailleurs qu'à Google).</p>
+    <div class="assistant-input" style="margin-top:0;">
+      <input type="password" id="api-key-input" placeholder="Collez votre clé API Gemini..." autocomplete="off">
+      <button onclick="savePersonalApiKey()">Enregistrer</button>
+    </div>
+    <div id="api-key-status" style="margin-top:8px; font-size:11.5px; color:var(--text-dim); font-family:var(--font-mono);">${getPersonalApiKey() ? `✅ Clé personnelle enregistrée — ....${getPersonalApiKey().slice(-6)} <a href="#" onclick="deletePersonalApiKey(); return false;" style="color:var(--rose)">Supprimer</a>` : 'Aucune clé enregistrée.'}</div>
   </div>`;
 }
 
 function sectionParametres(){
-  const apiBase = getApiBase();
+  const cfg = getGithubConfig();
+  const hasToken = !!getGithubToken();
+  const mainUrl = rawGithubUrl(GH_MAIN_FILE_PATH);
+  const pboUrl = rawGithubUrl(GH_PBO_FILE_PATH);
   return `
   <div class="topbar">
     <div><h1>Paramètres</h1><p>Préférences d'affichage de ce rapport</p></div>
   </div>
 
   <div class="panel" style="margin-bottom:14px;">
-    <h2 style="margin-bottom:4px;">Synchronisation serveur (partage d'équipe)</h2>
-    <p class="sub" style="margin-bottom:12px;">Si vous ouvrez ce dashboard via le lien du serveur (ex. https://votre-app.onrender.com), tout est déjà connecté automatiquement — rien à faire ci-dessous. Ce champ ne sert que si vous ouvrez le fichier .xlsx en local et voulez quand même le relier à un serveur distant.</p>
+    <h2 style="margin-bottom:4px;">Synchronisation GitHub (partage d'équipe)</h2>
+    <p class="sub" style="margin-bottom:12px;">Les données publiées sont enregistrées dans un dépôt GitHub — tout le monde qui ouvre ce dashboard (hébergé via GitHub Pages) les récupère automatiquement, sans rien importer de son côté. Aucun serveur, aucune base de données externe.</p>
+    <div style="display:grid; grid-template-columns:1fr 1fr 100px; gap:8px; margin-bottom:10px;">
+      <input type="text" id="gh-owner-input" placeholder="Propriétaire (ex. sonatel-dbf)" value="${cfg.owner.replace(/"/g,'&quot;')}"
+        style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-panel-2); color:var(--text); font-family:var(--font-mono); font-size:12.5px;">
+      <input type="text" id="gh-repo-input" placeholder="Dépôt (ex. fibre-dashboard)" value="${cfg.repo.replace(/"/g,'&quot;')}"
+        style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-panel-2); color:var(--text); font-family:var(--font-mono); font-size:12.5px;">
+      <input type="text" id="gh-branch-input" placeholder="branche" value="${cfg.branch.replace(/"/g,'&quot;')}"
+        style="padding:9px 12px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-panel-2); color:var(--text); font-family:var(--font-mono); font-size:12.5px;">
+    </div>
     <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
-      <input type="text" id="api-base-input" placeholder="https://votre-app.onrender.com" value="${apiBase ? apiBase.replace(/"/g,'&quot;') : ''}"
+      <input type="password" id="gh-token-input" placeholder="${hasToken ? 'Jeton déjà enregistré — laisser vide pour le garder' : 'Jeton GitHub (admin uniquement, optionnel pour la lecture)'}"
         style="flex:1; padding:9px 12px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-panel-2); color:var(--text); font-family:var(--font-mono); font-size:12.5px;">
-      <button class="btn-primary" onclick="saveApiBase()">Enregistrer</button>
+      <button class="btn-primary" onclick="saveGithubConfig()">Enregistrer</button>
     </div>
     <div id="api-status" style="font-size:12px; color:var(--text-dim); margin-bottom:14px;"></div>
     <div style="border-top:1px solid var(--border-soft); padding-top:14px;">
       <h3 style="font-size:13px; margin-bottom:8px;">Publier une mise à jour (admin)</h3>
-      <p class="sub" style="margin-bottom:10px;">Envoie un fichier vers le serveur pour que toute l'équipe voie les données à jour sans rien importer. "Total client" est calculé automatiquement depuis l'onglet Client — les autres utilisateurs ne peuvent pas le modifier, seul vous le pouvez ici si besoin de le corriger.</p>
+      <p class="sub" style="margin-bottom:10px;">✅ Le bouton <b>« Importer »</b> en haut de la barre latérale publie <b>automatiquement</b> vers GitHub en même temps qu'il affiche les données chez vous — une seule action suffit. Le jeton GitHub (ci-dessus) doit être renseigné pour que la publication fonctionne ; sans lui, les données restent seulement affichées localement. "Total client" est calculé automatiquement depuis l'onglet Client — vous seul pouvez le corriger, ici.</p>
       <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
         <input type="text" id="total-client-override" placeholder="Corriger « Total client » (optionnel, laisser vide sinon)"
           style="flex:1; padding:9px 12px; border-radius:8px; border:1px solid var(--border-soft); background:var(--bg-panel-2); color:var(--text); font-family:var(--font-mono); font-size:12.5px;">
       </div>
-      <div style="display:flex; flex-wrap:wrap; gap:8px;">
-        <button class="import-btn" onclick="document.getElementById('publish-main-input').click()">📤 Publier le fichier Suivi_Taux...xlsx</button>
-        <button class="import-btn" onclick="document.getElementById('publish-pbo-input').click()">📤 Publier le fichier Pénétration/PBO...xlsx</button>
-      </div>
-      <input type="file" id="publish-main-input" accept=".xlsx" style="display:none" onchange="publishToServer(event,'mainFile')">
-      <input type="file" id="publish-pbo-input" accept=".xlsx" style="display:none" onchange="publishToServer(event,'pboFile')">
+      <p class="sub">Pour publier : utilisez simplement le bouton « Importer » de la barre latérale — les boutons ci-dessous n'existent plus, remplacés par cette action unique.</p>
     </div>
     <div style="border-top:1px solid var(--border-soft); padding-top:14px; margin-top:14px;">
       <h3 style="font-size:13px; margin-bottom:8px;">Télécharger le fichier importé</h3>
-      <p class="sub" style="margin-bottom:10px;">Le fichier Excel exact tel qu'il a été publié la dernière fois — aucune modification, aucun recalcul.</p>
+      <p class="sub" style="margin-bottom:10px;">Le fichier Excel exact tel qu'il a été publié la dernière fois — aucune modification, aucun recalcul (servi directement par GitHub).</p>
       <div style="display:flex; flex-wrap:wrap; gap:8px;">
-        <a class="import-btn" style="text-decoration:none; display:inline-block;" href="${apiBase}/api/download/main" target="_blank">⬇️ ${(DATA.sourceFileNames&&DATA.sourceFileNames.main)||'Suivi_Taux_d_occupation...xlsx'}</a>
-        <a class="import-btn" style="text-decoration:none; display:inline-block;" href="${apiBase}/api/download/pbo" target="_blank">⬇️ ${(DATA.sourceFileNames&&DATA.sourceFileNames.pbo)||'Pénétration/PBO...xlsx'}</a>
+        ${mainUrl ? `<a class="import-btn" style="text-decoration:none; display:inline-block;" href="${mainUrl}" target="_blank">⬇️ ${(DATA.sourceFileNames&&DATA.sourceFileNames.main)||'Suivi_Taux_d_occupation...xlsx'}</a>` : ''}
+        ${pboUrl ? `<a class="import-btn" style="text-decoration:none; display:inline-block;" href="${pboUrl}" target="_blank">⬇️ ${(DATA.sourceFileNames&&DATA.sourceFileNames.pbo)||'Pénétration/PBO...xlsx'}</a>` : ''}
       </div>
-      ${!apiBase ? `<p class="sub" style="margin-top:8px; color:var(--amber);">⚠️ Configurez d'abord l'URL du serveur ci-dessus pour activer le téléchargement.</p>` : ''}
+      ${!cfg.owner || !cfg.repo ? `<p class="sub" style="margin-top:8px; color:var(--amber);">⚠️ Configurez d'abord le dépôt GitHub ci-dessus pour activer le téléchargement.</p>` : ''}
     </div>
   </div>
 
@@ -3470,9 +3479,6 @@ const SECTIONS = {
 };
 
 function afterRender(id){
-  if(id==='assistant'){
-    refreshApiKeyStatus();
-  }
   if(id==='dashboard'){
     document.getElementById('dash-trend').innerHTML = trendChart(DATA.trend);
     barList(regionsSorted, 'dash-region-bars', {key:'taux', label:'region', max:100});
@@ -3583,53 +3589,75 @@ function setSyncingIndicator(on){
   }
 }
 
-/* ================== Synchronisation serveur (partage d'équipe) ==================
-   Optionnelle : si une URL de serveur est configurée (Paramètres), le dashboard
-   récupère automatiquement les dernières données publiées au chargement, pour que
-   les collègues n'aient rien à importer eux-mêmes. Sans configuration, le
-   dashboard fonctionne exactement comme avant (import local uniquement). */
+/* ================== Synchronisation GitHub (partage d'équipe, sans serveur) ==================
+   Architecture simplifiée : plus de serveur (Render) ni de base de données
+   externe (Upstash). Les données publiées sont enregistrées directement comme
+   fichier JSON dans un dépôt GitHub (API Contents), et récupérées par tous
+   les autres utilisateurs via l'URL publique "raw" de GitHub — aucun service
+   qui tourne en continu, donc aucune veille, aucun plantage mémoire possible. */
 
-const API_BASE_KEY = 'fibreTO:apiBase';
-function getApiBase(){
+const GH_OWNER_KEY = 'fibreTO:ghOwner';
+const GH_REPO_KEY = 'fibreTO:ghRepo';
+const GH_BRANCH_KEY = 'fibreTO:ghBranch';
+const GH_TOKEN_KEY = 'fibreTO:ghToken'; // admin uniquement — reste uniquement dans SON navigateur, jamais partagé
+const GH_DATA_PATH = 'data/latest.json';
+const GH_MAIN_FILE_PATH = 'data/main.xlsx';
+const GH_PBO_FILE_PATH = 'data/pbo.xlsx';
+
+function getGithubConfig(){
   try{
-    const saved = (localStorage.getItem(API_BASE_KEY)||'').trim().replace(/\/+$/,'');
-    if(saved) return saved;
-  }catch(e){}
-  // Si le dashboard est servi par le serveur lui-même (via le lien partagé),
-  // pas besoin de configurer quoi que ce soit : on utilise la même adresse.
-  if(location.protocol==='http:' || location.protocol==='https:') return location.origin;
-  return '';
+    return {
+      owner: (localStorage.getItem(GH_OWNER_KEY)||'').trim(),
+      repo: (localStorage.getItem(GH_REPO_KEY)||'').trim(),
+      branch: (localStorage.getItem(GH_BRANCH_KEY)||'main').trim() || 'main',
+    };
+  }catch(e){ return {owner:'', repo:'', branch:'main'}; }
 }
-function saveApiBase(){
-  const input = document.getElementById('api-base-input');
+function getGithubToken(){
+  try{ return (localStorage.getItem(GH_TOKEN_KEY)||'').trim(); }catch(e){ return ''; }
+}
+function saveGithubConfig(){
+  const owner = (document.getElementById('gh-owner-input')||{}).value?.trim() || '';
+  const repo = (document.getElementById('gh-repo-input')||{}).value?.trim() || '';
+  const branch = (document.getElementById('gh-branch-input')||{}).value?.trim() || 'main';
+  const tokenInput = document.getElementById('gh-token-input');
+  const token = tokenInput ? tokenInput.value.trim() : '';
+  try{
+    localStorage.setItem(GH_OWNER_KEY, owner);
+    localStorage.setItem(GH_REPO_KEY, repo);
+    localStorage.setItem(GH_BRANCH_KEY, branch);
+    if(token) localStorage.setItem(GH_TOKEN_KEY, token);
+  }catch(e){}
   const status = document.getElementById('api-status');
-  if(!input) return;
-  const val = input.value.trim().replace(/\/+$/,'');
-  try{ localStorage.setItem(API_BASE_KEY, val); }catch(e){}
-  if(status) status.textContent = val ? `Enregistré : ${val}` : 'Synchronisation serveur désactivée.';
-  showToast(val ? 'URL serveur enregistrée' : 'Synchronisation désactivée', '✅');
-  if(val) loadFromServer(true);
+  if(status) status.textContent = (owner&&repo) ? `Enregistré : ${owner}/${repo} (branche ${branch})` : 'Synchronisation GitHub désactivée.';
+  showToast('Configuration GitHub enregistrée', '✅');
+  if(tokenInput) tokenInput.value = ''; // ne jamais laisser le jeton affiché en clair
+  if(owner && repo) loadFromGithub(true);
 }
 
-async function loadFromServer(showFeedback){
-  const apiBase = getApiBase();
-  if(!apiBase) return;
-  // Pendant que ça charge (le plan gratuit Render peut mettre ~30s à se réveiller
-  // s'il était en veille), on affiche un état neutre "Synchronisation..." plutôt
-  // que le bandeau orange "données d'exemple", pour éviter un flash trompeur —
-  // le bandeau ne doit apparaître que si la synchronisation échoue vraiment.
+function rawGithubUrl(filePath){
+  const cfg = getGithubConfig();
+  if(!cfg.owner || !cfg.repo) return null;
+  return `https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${filePath}?t=${Date.now()}`; // cache-bust
+}
+
+async function loadFromGithub(showFeedback){
+  const url = rawGithubUrl(GH_DATA_PATH);
+  if(!url) return;
+  // Pendant que ça charge, on affiche un état neutre "Synchronisation..." plutôt
+  // que le bandeau orange "données d'exemple", pour éviter un flash trompeur.
   if(!showFeedback) setSyncingIndicator(true);
   try{
-    const res = await fetch(apiBase + '/api/data', { cache: 'no-store' });
+    const res = await fetch(url, { cache: 'no-store' });
     if(res.status === 404){
-      if(showFeedback) showToast('Serveur joignable mais aucune donnée publiée pour le moment.', '⚠️');
-      else updateDemoIndicators(); // retombe sur l'indicateur "exemple" puisqu'il n'y a rien de réel à afficher
+      if(showFeedback) showToast('Dépôt joignable mais aucune donnée publiée pour le moment.', '⚠️');
+      else updateDemoIndicators();
       return;
     }
     if(!res.ok) throw new Error('HTTP ' + res.status);
-    const serverData = await res.json();
-    serverData.isSeed = false;
-    DATA = serverData;
+    const remoteData = await res.json();
+    remoteData.isSeed = false;
+    DATA = remoteData;
     recomputeDerived();
     document.getElementById('week-detected').textContent = DATA.week;
     document.getElementById('anomaly-badge').textContent = String(totalAnomalies);
@@ -3639,60 +3667,69 @@ async function loadFromServer(showFeedback){
     const active = document.querySelector('.nav-item.active');
     render(active ? active.dataset.section : 'dashboard');
     if(typeof refreshPenSection === 'function') refreshPenSection();
-    if(showFeedback) showToast(`Données récupérées depuis le serveur : ${DATA.week}`, '✅');
+    if(showFeedback) showToast(`Données récupérées depuis GitHub : ${DATA.week}`, '✅');
   }catch(err){
-    console.error('Synchronisation serveur impossible :', err);
-    if(showFeedback) showToast('Serveur injoignable : ' + err.message, '⚠️');
-    else updateDemoIndicators(); // la synchro silencieuse a échoué -> on repasse sur l'indicateur "exemple"
+    console.error('Synchronisation GitHub impossible :', err);
+    if(showFeedback) showToast('Dépôt injoignable : ' + err.message, '⚠️');
+    else updateDemoIndicators();
   }
 }
 
-let cachedAdminPassword = null;
-async function publishToServer(event, fieldName){
-  const apiBase = getApiBase();
-  if(!apiBase){ showToast("Configurez d'abord l'URL du serveur ci-dessus.", '⚠️'); event.target.value=''; return; }
-  const file = event.target.files[0];
-  event.target.value = '';
-  if(!file) return;
-  if(cachedAdminPassword===null){
-    cachedAdminPassword = prompt('Mot de passe admin pour publier vers le serveur :') || '';
+function utf8ToBase64(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function arrayBufferToBase64(buffer){
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for(let i=0;i<bytes.length;i+=chunkSize){
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i+chunkSize));
   }
-  const status = document.getElementById('api-status');
-  if(status) status.textContent = 'Publication en cours...';
+  return btoa(binary);
+}
+
+async function githubPutFile(filePath, base64Content, message){
+  const cfg = getGithubConfig();
+  const token = getGithubToken();
+  if(!cfg.owner || !cfg.repo) throw new Error("Configuration GitHub incomplète (propriétaire/dépôt manquant).");
+  if(!token) throw new Error("Jeton GitHub manquant (Paramètres → Synchronisation GitHub).");
+  const apiUrl = `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${filePath}`;
+  let sha;
   try{
-    const fd = new FormData();
-    fd.append('password', cachedAdminPassword);
-    fd.append(fieldName, file);
-    if(fieldName==='mainFile'){
-      const overrideInput = document.getElementById('total-client-override');
-      const overrideVal = overrideInput ? overrideInput.value.trim() : '';
-      if(overrideVal) fd.append('totalClientOverride', overrideVal);
-    }
-    const res = await fetch(apiBase + '/api/upload', { method:'POST', body: fd });
-    const json = await res.json();
-    if(!res.ok) throw new Error(json.error || ('HTTP '+res.status));
-    if(status) status.textContent = `Publié : semaine ${json.week} (${fmt(json.plaques)} plaques) — visible par toute l'équipe.`;
-    const overrideInput = document.getElementById('total-client-override');
-    if(overrideInput) overrideInput.value = '';
-    showToast('Données publiées sur le serveur ✅', '✅');
-    loadFromServer(false); // rafraîchit aussi la vue locale avec ce qui vient d'être publié
-  }catch(err){
-    cachedAdminPassword = null; // on redemandera le mot de passe si ça a échoué (ex: mauvais mdp)
-    if(status) status.textContent = 'Échec : ' + err.message;
-    showToast('Échec de la publication : ' + err.message, '⚠️');
-  }
+    const getRes = await fetch(apiUrl + `?ref=${encodeURIComponent(cfg.branch)}`, {
+      headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json' }
+    });
+    if(getRes.ok){ const j = await getRes.json(); sha = j.sha; }
+  }catch(e){ /* fichier probablement inexistant encore — on le crée */ }
+
+  const putRes = await fetch(apiUrl, {
+    method: 'PUT',
+    headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github+json', 'Content-Type':'application/json' },
+    body: JSON.stringify({ message, content: base64Content, branch: cfg.branch, sha }),
+  });
+  const putJson = await putRes.json();
+  if(!putRes.ok) throw new Error(putJson.message || `HTTP ${putRes.status}`);
+  return putJson;
+}
+
+async function publishDataToGithub(){
+  return githubPutFile(GH_DATA_PATH, utf8ToBase64(JSON.stringify(DATA)), `Mise à jour données — semaine ${DATA.week}`);
+}
+async function publishRawFileToGithub(file, filePath){
+  const buffer = await file.arrayBuffer();
+  return githubPutFile(filePath, arrayBufferToBase64(buffer), `Publication fichier source : ${file.name}`);
 }
 
 document.getElementById('week-detected').textContent = DATA.week;
 document.getElementById('anomaly-badge').textContent = '4';
 document.title = `Fibre TO · Suivi ${DATA.week}`;
 updateSidebarFooter();
-if(getApiBase()){ setSyncingIndicator(true); } else { updateDemoIndicators(); }
+if(getGithubConfig().owner && getGithubConfig().repo){ setSyncingIndicator(true); } else { updateDemoIndicators(); }
 updateFavorisBadge();
 
 render('dashboard');
 if(typeof refreshPenSection === 'function') refreshPenSection();
-loadFromServer(false); // tentative silencieuse de récupération des données partagées, si configuré
+loadFromGithub(false); // tentative silencieuse de récupération des données partagées, si configuré
 
 /* ================== IMPORT D'UN NOUVEAU FICHIER EXCEL ==================
    Lit les feuilles TO_Plaques / SYNTHESE / TO_Communes du classeur importé
@@ -4562,17 +4599,33 @@ function onImportFileChosen(event){
   btn.classList.add('busy');
   label.textContent = 'Lecture du fichier…';
   const reader = new FileReader();
-  reader.onload = function(e){
+  reader.onload = async function(e){
     try{
       const bytes = new Uint8Array(e.target.result);
       const wb = XLSX.read(bytes, {type:'array', cellDates:false});
       window.importedFileName = file.name;
       const sheetSet = new Set(wb.SheetNames);
       let didSomething = false;
+      let githubFilePath = null; // détermine automatiquement quoi publier, selon le contenu du fichier
 
       if(sheetSet.has('TO_Plaques') && sheetSet.has('TO_Communes')){
-        const prevPboZero = DATA.pbo_zero;
-        const prevPen50 = DATA.pen50;
+        // avant de reconstruire les données, on essaie de récupérer ce qui est
+        // déjà publié sur GitHub pour ne pas perdre le PBO/pen50 déjà en ligne
+        // si ce fichier-ci ne les contient pas.
+        let prevPboZero = DATA.pbo_zero, prevPen50 = DATA.pen50;
+        try{
+          const cfg = getGithubConfig();
+          if(cfg.owner && cfg.repo){
+            const remoteUrl = rawGithubUrl(GH_DATA_PATH);
+            const remoteRes = await fetch(remoteUrl, {cache:'no-store'});
+            if(remoteRes.ok){
+              const remote = await remoteRes.json();
+              if(remote.pbo_zero) prevPboZero = remote.pbo_zero;
+              if(remote.pen50) prevPen50 = remote.pen50;
+            }
+          }
+        }catch(e){ /* pas grave, on garde ce qu'on a déjà localement */ }
+
         const newData = buildDataFromWorkbook(wb);
         DATA = newData;
         if(prevPboZero) DATA.pbo_zero = prevPboZero;
@@ -4583,26 +4636,50 @@ function onImportFileChosen(event){
         updateSidebarFooter();
         updateDemoIndicators();
         document.title = `Fibre TO · Suivi ${DATA.week}`;
-        refreshPenSection();
+        await refreshPenSection();
         didSomething = true;
+        githubFilePath = GH_MAIN_FILE_PATH;
       }
 
       if(sheetSet.has('PBO_0_Client')){
         DATA.pbo_zero = buildPBOZeroData(wb);
         didSomething = true;
+        githubFilePath = GH_PBO_FILE_PATH;
       }
 
       if(sheetSet.has('Pénétration < à 50%')){
         DATA.pen50 = buildPenetrationBelow50Data(wb);
         didSomething = true;
+        githubFilePath = GH_PBO_FILE_PATH;
       }
 
       updateFavorisBadge();
       const active = document.querySelector('.nav-item.active');
       render(active ? active.dataset.section : 'dashboard');
 
-      if(didSomething) showToast(`Données mises à jour : ${DATA.week}`, '✅');
-      else showToast("Fichier reconnu mais aucune feuille compatible n'a été trouvée (TO_Plaques/TO_Communes, PBO_0_Client ou Pénétration < à 50%).", '⚠️');
+      if(!didSomething){
+        showToast("Fichier reconnu mais aucune feuille compatible n'a été trouvée (TO_Plaques/TO_Communes, PBO_0_Client ou Pénétration < à 50%).", '⚠️');
+        return;
+      }
+
+      // Publication automatique vers GitHub (si configuré), pour que tout le
+      // monde voie la mise à jour sans action supplémentaire — une seule
+      // action pour vous, au lieu d'importer PUIS publier séparément.
+      const cfg = getGithubConfig();
+      const hasToken = !!getGithubToken();
+      if(cfg.owner && cfg.repo && hasToken){
+        label.textContent = 'Publication vers GitHub…';
+        try{
+          await publishDataToGithub();
+          if(githubFilePath) await publishRawFileToGithub(file, githubFilePath).catch(()=>{}); // best-effort, pour le téléchargement du fichier original
+          showToast(`Données mises à jour et publiées pour toute l'équipe : ${DATA.week}`, '✅');
+        }catch(pubErr){
+          showToast(`Mis à jour localement, mais échec de la publication GitHub : ${pubErr.message}`, '⚠️');
+        }
+      } else {
+        const reason = (cfg.owner && cfg.repo) ? ' (jeton GitHub manquant pour publier)' : ' (configurez GitHub dans Paramètres pour publier à toute l\'équipe)';
+        showToast(`Données mises à jour localement : ${DATA.week}${reason}`, '⚠️');
+      }
     }catch(err){
       console.error(err);
       showToast("Import impossible : "+(err.message||"fichier invalide"), '⚠️');
@@ -4739,56 +4816,6 @@ Comment te comporter :
 
 let assistantHistory = [];
 
-function getApiKey(){
-  return localStorage.getItem('fibre_dashboard_api_key') || '';
-}
-
-function refreshApiKeyStatus(){
-  const status = document.getElementById('api-key-status');
-  if(!status) return;
-  const key = getApiKey();
-  if(key){
-    const prefixOk = key.startsWith('gsk_');
-    if(prefixOk){
-      status.innerHTML = `✅ Clé enregistrée — ....${key.slice(-6)} &nbsp;<a href="#" onclick="deleteApiKey(); return false;" style="color:var(--rose)">Supprimer</a>`;
-    } else {
-      status.innerHTML = `⚠️ Une clé est enregistrée mais elle n'a pas le format d'une clé Groq (....${key.slice(-6)}) — c'est probablement pour ça que ça échoue. &nbsp;<a href="#" onclick="deleteApiKey(); return false;" style="color:var(--rose)">Supprimer cette clé</a>`;
-    }
-  } else {
-    status.innerHTML = `Aucune clé enregistrée. Récupérez une clé sur <a href="https://console.groq.com/keys" target="_blank" style="color:var(--cyan-glow)">console.groq.com/keys</a> (préfixe gsk_).`;
-  }
-}
-
-function saveApiKey(){
-  const input = document.getElementById('api-key-input');
-  const val = input.value.trim();
-  const status = document.getElementById('api-key-status');
-
-  if(!val){
-    localStorage.removeItem('fibre_dashboard_api_key');
-    refreshApiKeyStatus();
-    return;
-  }
-
-  if(!val.startsWith('gsk_')){
-    let detected = "Ce format de clé n'est pas reconnu.";
-    if(val.startsWith('sk-ant-')) detected = "Ceci est une clé <b>Anthropic</b> (préfixe sk-ant-), pas une clé Groq.";
-    else if(val.startsWith('sk-') ) detected = "Ceci ressemble à une clé OpenAI ou d'un autre fournisseur (préfixe sk-), pas une clé Groq.";
-    status.innerHTML = `❌ Clé refusée — ${detected} Une clé Groq valide commence toujours par <b>gsk_</b> et s'obtient sur <a href="https://console.groq.com/keys" target="_blank" style="color:var(--cyan-glow)">console.groq.com/keys</a>. La clé n'a <b>pas</b> été enregistrée.`;
-    // do NOT overwrite the existing key with an invalid one
-    return;
-  }
-
-  localStorage.setItem('fibre_dashboard_api_key', val);
-  input.value = '';
-  refreshApiKeyStatus();
-}
-
-function deleteApiKey(){
-  localStorage.removeItem('fibre_dashboard_api_key');
-  refreshApiKeyStatus();
-}
-
 function renderMarkdownLite(raw){
   const escaped = raw.replace(/</g,'&lt;');
   const lines = escaped.split('\n');
@@ -4808,13 +4835,43 @@ function renderMarkdownLite(raw){
   return html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 }
 
+function getPersonalApiKey(){
+  return localStorage.getItem('fibre_dashboard_api_key') || '';
+}
+function savePersonalApiKey(){
+  const input = document.getElementById('api-key-input');
+  const status = document.getElementById('api-key-status');
+  if(!input) return;
+  const val = input.value.trim();
+  if(!val){ localStorage.removeItem('fibre_dashboard_api_key'); refreshPersonalApiKeyStatus(); return; }
+  if(val.length < 15){
+    if(status) status.innerHTML = `❌ Cette valeur semble trop courte pour être une clé API valide. Récupérez-en une sur <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--cyan-glow)">aistudio.google.com/apikey</a> (bouton "Créer une clé API").`;
+    return;
+  }
+  localStorage.setItem('fibre_dashboard_api_key', val);
+  input.value = '';
+  refreshPersonalApiKeyStatus();
+}
+function deletePersonalApiKey(){ localStorage.removeItem('fibre_dashboard_api_key'); refreshPersonalApiKeyStatus(); }
+function refreshPersonalApiKeyStatus(){
+  const status = document.getElementById('api-key-status');
+  if(!status) return;
+  const key = getPersonalApiKey();
+  status.innerHTML = key
+    ? `✅ Clé personnelle enregistrée — ....${key.slice(-6)} &nbsp;<a href="#" onclick="deletePersonalApiKey(); return false;" style="color:var(--rose)">Supprimer</a>`
+    : `Aucune clé personnelle enregistrée.`;
+}
+
 async function askAssistant(question){
   const log = document.getElementById('assistant-log');
   log.appendChild(el(`<div class="msg user">${question.replace(/</g,'&lt;')}</div>`));
 
-  const apiKey = getApiKey();
-  if(!apiKey){
-    log.appendChild(el(`<div class="msg bot">Aucune clé API n'est enregistrée. Renseignez votre clé Groq (gsk_...) dans le champ ci-dessus, puis relancez votre question.</div>`));
+  const personalKey = getPersonalApiKey();
+  // Architecture sans serveur (GitHub Pages) : pas de relais possible avec
+  // une clé partagée côté serveur. Chaque utilisateur qui veut l'Assistant
+  // IA doit renseigner sa propre clé Gemini personnelle (gratuite).
+  if(!personalKey){
+    log.appendChild(el(`<div class="msg bot">L'Assistant IA nécessite une clé Gemini personnelle (gratuite) — renseignez-la dans le champ ci-dessous ⬇️, puis reposez votre question.</div>`));
     log.scrollTop = log.scrollHeight;
     return;
   }
@@ -4827,37 +4884,34 @@ async function askAssistant(question){
   if(sendBtn) sendBtn.disabled = true;
 
   assistantHistory.push({role:'user', content: question});
-  // keep last 10 turns to bound payload size
+  // keep last 4 turns to bound payload size
   const trimmedHistory = assistantHistory.slice(-4);
 
-  // Groq uses the OpenAI-compatible chat.completions format:
-  // system prompt is a message in the array (not a separate top-level field),
-  // and the response comes back as choices[0].message.content.
-  const groqMessages = [
-    {role: 'system', content: buildContextSummary()},
-    ...trimmedHistory
-  ];
+  // Gemini utilise des rôles "user"/"model" (pas "user"/"assistant") et un
+  // format {role, parts:[{text}]}.
+  const geminiContents = trimmedHistory.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+  const systemInstruction = buildContextSummary();
 
   try{
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const model = "gemini-2.0-flash";
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${personalKey}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile",
-        max_tokens: 700,
-        temperature: 0.4,
-        messages: groqMessages
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: geminiContents,
+        generationConfig: { maxOutputTokens: 700, temperature: 0.4 }
       })
     });
     const data = await response.json();
-    if(data.error){
-      throw new Error(data.error.message || 'Erreur API');
-    }
-    const answer = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim()
-      || "Je n'ai pas pu générer de réponse pour cette question.";
+    if(data.error) throw new Error(data.error.message || 'Erreur API');
+    let answer = (data.candidates && data.candidates[0] && data.candidates[0].content
+      && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
+      && data.candidates[0].content.parts[0].text || '').trim();
+    answer = answer || "Je n'ai pas pu générer de réponse pour cette question.";
     assistantHistory.push({role:'assistant', content: answer});
     loadingMsg.remove();
     log.appendChild(el(`<div class="msg bot">${renderMarkdownLite(answer)}</div>`));
@@ -4865,10 +4919,10 @@ async function askAssistant(question){
     assistantHistory.pop();
     loadingMsg.remove();
     const rawMsg = (err && err.message) ? err.message : 'erreur inconnue';
-    const isRateLimit = /rate limit|tokens per minute|TPM/i.test(rawMsg);
+    const isRateLimit = /rate limit|quota|RESOURCE_EXHAUSTED|429/i.test(rawMsg);
     const friendly = isRateLimit
-      ? `Limite de débit du plan gratuit Groq atteinte (trop de questions envoyées en peu de temps). Patientez une dizaine de secondes puis réessayez — ce n'est pas une erreur de votre côté.`
-      : `Désolé, une erreur est survenue en interrogeant l'assistant (${rawMsg.replace(/</g,'&lt;')}). Vérifiez votre clé API et réessayez.`;
+      ? `Limite de débit du plan gratuit Gemini atteinte (trop de questions envoyées en peu de temps). Patientez une dizaine de secondes puis réessayez — ce n'est pas une erreur de votre côté.`
+      : `Désolé, une erreur est survenue en interrogeant l'assistant (${rawMsg.replace(/</g,'&lt;')}). Réessayez dans quelques instants.`;
     log.appendChild(el(`<div class="msg bot">${friendly}</div>`));
     console.error('Assistant error:', err);
   }finally{
