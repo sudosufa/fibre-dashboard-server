@@ -5121,7 +5121,7 @@ Comment te comporter :
 - Réponds toujours à partir des données ci-dessus. Avant de dire qu'une info manque, cherche sérieusement dans TOUTES les sections du JSON (une commune ou une plaque citée dans la question peut apparaître dans plusieurs pages à la fois — pénétration, sans constitution, PBO zéro, alertes). Ne te limite pas à la première section qui semble correspondre.
 - Anticipe la suite logique de la question : si un élément connexe et utile ressort d'une autre page (ex. la commune demandée a aussi une alerte statistique, ou la plaque citée a du PBO à 0 client, ou une plaque est dans le top des hausses anormales de FI), mentionne-le brièvement à la fin — comme le ferait un collègue qui connaît le dossier dans son ensemble, pas un système qui répond au mot près à la question posée.
 - Ton naturel et humain : pas de formules robotiques ("D'après les données fournies...", "En tant qu'assistant IA..."), pas de disclaimers répétés à chaque réponse. Parle comme une personne compétente qui suit ce dossier chaque semaine.
-- Va droit au but dans les premières phrases, puis développe si la question le justifie (analyse, comparaison, explication d'une anomalie, recommandation). Sois aussi concis ou détaillé que la question l'exige, sans remplissage inutile.
+- Reste concise : vise moins de 200 mots sauf si la question demande explicitement un développement approfondi (analyse comparative, plan d'action détaillé). Termine toujours tes phrases et tes listes — ne laisse jamais une idée ou un markdown (**gras**, tiret de liste) inachevé.
 - Structure les réponses plus riches avec de courtes puces (commençant par "- ") ou des paragraphes courts ; utilise **le gras** pour un chiffre clé ou un nom de commune/région.
 - Mets les chiffres en perspective (comparaison à la moyenne globale, à la semaine précédente, à une commune voisine) plutôt que de simplement les répéter.
 - Si une question appelle une recommandation ou une explication de cause probable, propose ton raisonnement clairement, en le présentant comme une hypothèse si les données ne le confirment pas explicitement.
@@ -5212,37 +5212,112 @@ async function askAssistant(question){
   }));
   const systemInstruction = buildContextSummary();
 
+  const MAX_ATTEMPTS = 3; // 1 essai initial + 2 nouvelles tentatives en cas de surcharge Gemini
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const isOverload = msg => /high demand|overloaded|UNAVAILABLE|\b503\b/i.test(msg||'');
+
+  let fullText = '';
+  let finishReason = null;
+  let bubbleCreated = false;
+
   try{
     // Alias "latest" fourni par Google : pointe toujours vers le modèle Flash
     // le plus récent, pour ne plus jamais se périmer quand Google en sort un nouveau.
     const model = "gemini-flash-latest";
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${personalKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents: geminiContents,
-        generationConfig: { maxOutputTokens: 700, temperature: 0.4 }
-      })
+    // streamGenerateContent (au lieu de generateContent) : la réponse arrive
+    // progressivement, mot par mot, au lieu d'un seul bloc après un long
+    // silence. Le temps total est similaire, mais ça paraît nettement plus
+    // rapide côté utilisateur — c'est la première réponse visible qui compte.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${personalKey}`;
+    const requestBody = JSON.stringify({
+      system_instruction: { parts: [{ text: systemInstruction }] },
+      contents: geminiContents,
+      generationConfig: { maxOutputTokens: 1536, temperature: 0.4 }
     });
-    const data = await response.json();
-    if(data.error) throw new Error(data.error.message || 'Erreur API');
-    let answer = (data.candidates && data.candidates[0] && data.candidates[0].content
-      && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-      && data.candidates[0].content.parts[0].text || '').trim();
-    answer = answer || "Je n'ai pas pu générer de réponse pour cette question.";
-    assistantHistory.push({role:'assistant', content: answer});
-    loadingMsg.remove();
-    log.appendChild(el(`<div class="msg bot">${renderMarkdownLite(answer)}</div>`));
+
+    for(let attempt=1; attempt<=MAX_ATTEMPTS; attempt++){
+      try{
+        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: requestBody });
+
+        if(!response.ok || !response.body){
+          // Erreur avant même le début du flux (clé invalide, quota, surcharge...)
+          let errMsg = response.statusText || 'Erreur API';
+          try{ const errJson = await response.json(); errMsg = (errJson.error && errJson.error.message) || errMsg; }catch(e){}
+          throw new Error(errMsg);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while(true){
+          const { value, done } = await reader.read();
+          if(done) break;
+          buffer += decoder.decode(value, { stream:true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // ligne potentiellement incomplète, gardée pour le prochain tour
+          for(const line of lines){
+            if(!line.startsWith('data:')) continue;
+            const jsonStr = line.slice(5).trim();
+            if(!jsonStr) continue;
+            let obj;
+            try{ obj = JSON.parse(jsonStr); }catch(e){ continue; } // fragment incomplet, ignoré
+            if(obj.error) throw new Error(obj.error.message || 'Erreur API');
+            const piece = obj.candidates && obj.candidates[0] && obj.candidates[0].content
+              && obj.candidates[0].content.parts && obj.candidates[0].content.parts[0]
+              && obj.candidates[0].content.parts[0].text;
+            if(piece){
+              fullText += piece;
+              if(!bubbleCreated){ loadingMsg.classList.remove('loading'); bubbleCreated = true; }
+              loadingMsg.innerHTML = renderMarkdownLite(fullText);
+              log.scrollTop = log.scrollHeight;
+            }
+            if(obj.candidates && obj.candidates[0] && obj.candidates[0].finishReason){
+              finishReason = obj.candidates[0].finishReason;
+            }
+          }
+        }
+        break; // flux terminé sans erreur
+      }catch(e){
+        // On ne retente que si RIEN n'a encore été affiché à l'écran — sinon
+        // relancer dupliquerait le début de la réponse déjà visible.
+        if(!bubbleCreated && attempt<MAX_ATTEMPTS && isOverload(e.message)){
+          loadingMsg.textContent = `Serveur Gemini momentanément occupé — nouvelle tentative (${attempt}/${MAX_ATTEMPTS-1})…`;
+          await sleep(1200*attempt);
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    fullText = fullText.trim() || "Je n'ai pas pu générer de réponse pour cette question.";
+    // Sécurité : Gemini indique toujours pourquoi il s'est arrêté (finishReason:
+    // STOP = terminé normalement, MAX_TOKENS = limite de longueur atteinte).
+    // Si le flux se ferme SANS ce champ, c'est que la connexion a été coupée
+    // en cours de route (réseau instable, Google qui interrompt le flux) —
+    // sans ce contrôle, la phrase inachevée s'affichait silencieusement comme
+    // si elle était complète. On distingue maintenant les deux cas.
+    if(finishReason === 'MAX_TOKENS'){
+      fullText += '\n\n*(réponse coupée — reposez la question en demandant plus court si besoin)*';
+    } else if(finishReason !== 'STOP'){
+      fullText += '\n\n*(⚠️ connexion interrompue avant la fin de la réponse — reposez la question)*';
+    }
+    assistantHistory.push({role:'assistant', content: fullText});
+    loadingMsg.classList.remove('loading');
+    loadingMsg.innerHTML = renderMarkdownLite(fullText);
   }catch(err){
     assistantHistory.pop();
-    loadingMsg.remove();
     const rawMsg = (err && err.message) ? err.message : 'erreur inconnue';
     const isRateLimit = /rate limit|quota|RESOURCE_EXHAUSTED|429/i.test(rawMsg);
-    const friendly = isRateLimit
+    const isOverloadFinal = isOverload(rawMsg);
+    const friendly = bubbleCreated
+      ? `${renderMarkdownLite(fullText)}<p style="color:var(--rose); margin-top:6px;">⚠️ La réponse s'est interrompue en cours de génération (${rawMsg.replace(/</g,'&lt;')}). Reposez la question si besoin.</p>`
+      : isRateLimit
       ? `Limite de débit du plan gratuit Gemini atteinte (trop de questions envoyées en peu de temps). Patientez une dizaine de secondes puis réessayez — ce n'est pas une erreur de votre côté.`
+      : isOverloadFinal
+      ? `Les serveurs Gemini sont saturés (déjà retenté ${MAX_ATTEMPTS-1} fois automatiquement). Réessayez dans une minute — c'est temporaire côté Google, pas un problème du dashboard.`
       : `Désolé, une erreur est survenue en interrogeant l'assistant (${rawMsg.replace(/</g,'&lt;')}). Réessayez dans quelques instants.`;
-    log.appendChild(el(`<div class="msg bot">${friendly}</div>`));
+    loadingMsg.classList.remove('loading');
+    loadingMsg.innerHTML = friendly;
     console.error('Assistant error:', err);
   }finally{
     if(sendBtn) sendBtn.disabled = false;
