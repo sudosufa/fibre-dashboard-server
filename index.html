@@ -5179,6 +5179,29 @@ function refreshPersonalApiKeyStatus(){
     : `Aucune clé personnelle enregistrée.`;
 }
 
+/* Appel Gemini "classique" (réponse en un seul bloc, pas de streaming) —
+   utilisé en filet de sécurité quand le streaming se coupe en cours de
+   route. Plus lent à l'affichage mais nettement plus robuste face aux
+   réseaux/proxy qui n'aiment pas les connexions HTTP longues. */
+async function fetchGeminiOnceNonStreaming(model, personalKey, systemInstruction, geminiContents){
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${personalKey}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemInstruction }] },
+      contents: geminiContents,
+      generationConfig: { maxOutputTokens: 1536, temperature: 0.4 }
+    })
+  });
+  const data = await response.json();
+  if(data.error) throw new Error(data.error.message || 'Erreur API');
+  const text = (data.candidates && data.candidates[0] && data.candidates[0].content
+    && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
+    && data.candidates[0].content.parts[0].text || '').trim();
+  return text;
+}
+
 async function askAssistant(question){
   const log = document.getElementById('assistant-log');
   log.appendChild(el(`<div class="msg user">${question.replace(/</g,'&lt;')}</div>`));
@@ -5292,14 +5315,23 @@ async function askAssistant(question){
     fullText = fullText.trim() || "Je n'ai pas pu générer de réponse pour cette question.";
     // Sécurité : Gemini indique toujours pourquoi il s'est arrêté (finishReason:
     // STOP = terminé normalement, MAX_TOKENS = limite de longueur atteinte).
-    // Si le flux se ferme SANS ce champ, c'est que la connexion a été coupée
-    // en cours de route (réseau instable, Google qui interrompt le flux) —
-    // sans ce contrôle, la phrase inachevée s'affichait silencieusement comme
-    // si elle était complète. On distingue maintenant les deux cas.
+    // Si le flux se ferme SANS ce champ, la connexion a été coupée en cours de
+    // route (réseau/proxy qui n'aime pas les connexions longues). Dans ce cas,
+    // au lieu de juste prévenir l'utilisateur, on retente automatiquement UNE
+    // fois en mode "bloc complet" (non-streaming), plus tolérant à ce genre
+    // de réseau — ça garantit une réponse complète sans action de l'utilisateur.
+    const incomplete = finishReason !== 'STOP' && finishReason !== 'MAX_TOKENS';
     if(finishReason === 'MAX_TOKENS'){
       fullText += '\n\n*(réponse coupée — reposez la question en demandant plus court si besoin)*';
-    } else if(finishReason !== 'STOP'){
-      fullText += '\n\n*(⚠️ connexion interrompue avant la fin de la réponse — reposez la question)*';
+    }
+    if(incomplete){
+      loadingMsg.innerHTML = renderMarkdownLite(fullText) + '<p style="color:var(--text-dim); font-size:12px; margin-top:4px;">⏳ Connexion interrompue, récupération de la réponse complète…</p>';
+      try{
+        const fallbackText = await fetchGeminiOnceNonStreaming(model, personalKey, systemInstruction, geminiContents);
+        if(fallbackText) fullText = fallbackText; // réponse complète obtenue au 2e essai, on remplace la version tronquée
+      }catch(fallbackErr){
+        fullText += '\n\n*(⚠️ connexion interrompue avant la fin de la réponse — reposez la question)*';
+      }
     }
     assistantHistory.push({role:'assistant', content: fullText});
     loadingMsg.classList.remove('loading');
