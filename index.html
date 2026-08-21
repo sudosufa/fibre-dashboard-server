@@ -5284,13 +5284,10 @@ function refreshRelayUrlStatus(){
 function buildProviderConfig(provider, personalKey, groqKey, systemInstruction, historyMsgs){
   if(provider === 'groq'){
     const key = groqKey;
-    // "llama-3.3-70b-versatile" est parfois inaccessible sur les comptes Groq
-    // récents/non vérifiés (erreur "does not exist or you do not have access").
-    // "llama-3.1-8b-instant" est le modèle le plus largement disponible sur le
-    // tier gratuit (aucune restriction connue) — un peu moins "raisonneur"
-    // que le 70B, mais largement suffisant pour ce cas d'usage (Q&A sur des
-    // données déjà fournies dans le contexte, pas un raisonnement complexe).
-    const model = 'llama-3.1-8b-instant';
+    // Confirmé fonctionnel sur ce compte via le Playground Groq (les modèles
+    // Llama classiques renvoyaient "does not exist or you do not have
+    // access" — accès par modèle visiblement restreint selon le compte).
+    const model = 'openai/gpt-oss-120b';
     const messages = [
       { role: 'system', content: systemInstruction },
       ...historyMsgs.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
@@ -5302,8 +5299,11 @@ function buildProviderConfig(provider, personalKey, groqKey, systemInstruction, 
       streamUrl: baseUrl,
       nonStreamUrl: baseUrl,
       headers: key ? { Authorization: `Bearer ${key}` } : {},
-      streamBody: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 1536, stream: true }),
-      nonStreamBody: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 1536, stream: false }),
+      // gpt-oss (modèle "raisonneur") utilise "max_completion_tokens" plutôt
+      // que l'ancien "max_tokens" — confirmé par le code généré par le
+      // Playground Groq pour ce modèle précis.
+      streamBody: JSON.stringify({ model, messages, temperature: 0.4, max_completion_tokens: 1536, stream: true }),
+      nonStreamBody: JSON.stringify({ model, messages, temperature: 0.4, max_completion_tokens: 1536, stream: false }),
       // Format OpenAI-compatible : delta.content, finish_reason, et une ligne
       // littérale "data: [DONE]" (pas du JSON) pour marquer la fin du flux.
       isDoneLine: jsonStr => jsonStr === '[DONE]',
