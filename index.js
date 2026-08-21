@@ -29,7 +29,10 @@ if (!UPSTASH_URL || !UPSTASH_TOKEN) console.warn('[ATTENTION] UPSTASH_REDIS_REST
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // "Authorization" est nécessaire pour le relais IA (Groq authentifie via ce
+  // header plutôt qu'un paramètre d'URL comme Gemini) — sans lui, la
+  // pré-vérification CORS du navigateur bloque silencieusement l'appel.
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
@@ -91,6 +94,44 @@ app.get('/api/download/:which', async (req, res) => {
     if (raw) { const names = JSON.parse(raw); if (names[which]) originalName = names[which]; }
   } catch (e) { /* tant pis, on garde le nom générique */ }
   res.download(filePath, originalName);
+});
+
+/* ==========================================================================
+   Relais IA — proxy générique pour l'Assistant IA du dashboard (Gemini/Groq).
+   Transmet la requête telle quelle vers l'URL passée en paramètre "target"
+   et retransmet la réponse (streaming inclus) sans la modifier. Le serveur
+   ne connaît rien de Gemini/Groq spécifiquement, il fait juste passer les
+   octets — les clés API restent dans le navigateur de chaque utilisateur,
+   jamais stockées ici.
+
+   Côté dashboard : Paramètres → Assistant IA → "Serveur relais" → collez
+   l'URL de ce serveur Render (ex. https://votre-app.onrender.com).
+   ========================================================================== */
+app.post('/relay', async (req, res) => {
+  try {
+    const target = req.query.target;
+    if (!target) return res.status(400).json({ error: { message: 'Paramètre "target" manquant.' } });
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (req.headers['authorization']) headers['Authorization'] = req.headers['authorization'];
+
+    const upstream = await fetch(target, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(req.body), // express.json() a déjà parsé le corps entrant
+    });
+
+    res.status(upstream.status);
+    res.set('Content-Type', upstream.headers.get('content-type') || 'application/json');
+    if (upstream.body) {
+      for await (const chunk of upstream.body) res.write(chunk);
+    }
+    res.end();
+  } catch (err) {
+    console.error('Erreur relais IA:', err);
+    if (!res.headersSent) res.status(502);
+    res.end(JSON.stringify({ error: { message: 'Erreur relais : ' + err.message } }));
+  }
 });
 
 app.post(
