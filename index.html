@@ -885,8 +885,8 @@ function exportCSV(filename, headers, rows){
 function exportPlaquesCSV(){
   const arr = filteredPlaques();
   exportCSV(`plaques_${DATA.week}.csv`,
-    ['Plaque','Région','Commune','Zone','EQL','Taux occ. (%)','PBO saturé (%)','Âge (mois)'],
-    arr.map(p=>[p.plaque,p.region,p.commune,p.zone,p.eql,p.taux,p.pbo,p.age]));
+    ['Plaque','Région','Commune','Zone','EQL','Clients raccordés','Taux occ. (%)','PBO saturé (%)','Âge (mois)','Date ouverture'],
+    arr.map(p=>[p.plaque,p.region,p.commune,p.zone,p.eql,p.racc,p.taux,p.pbo,p.age,p.openDateLabel||'']));
 }
 function exportRegionsCSV(){
   exportCSV(`regions_${DATA.week}.csv`,
@@ -2070,7 +2070,7 @@ function sectionPlaques(){
     <table id="plaques-table">
       <thead><tr>
         <th></th><th data-k="plaque">Plaque</th><th data-k="region">Région</th><th data-k="commune">Commune</th>
-        <th data-k="eql">EQL</th><th data-k="taux">Taux occ.</th><th data-k="pbo">PBO sat.</th><th data-k="age">Âge</th>
+        <th data-k="eql">EQL</th><th data-k="racc">Clients raccordés</th><th data-k="taux">Taux occ.</th><th data-k="pbo">PBO sat.</th><th data-k="age">Âge</th><th data-k="openSerial">Date ouverture</th>
       </tr></thead>
       <tbody id="plaques-tbody"></tbody>
     </table>
@@ -2112,9 +2112,11 @@ function renderPlaquesTable(){
       <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')">${p.region}</td>
       <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')">${p.commune}</td>
       <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')">${fmt(p.eql)}</td>
+      <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')">${fmt(p.racc)}</td>
       <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')"><span class="tag ${tagClass}">${p.taux}%</span></td>
       <td style="cursor:pointer; color:${p.pbo>70?'var(--rose)':'var(--text)'}" onclick="openPlaqueModal('${p.plaque}')">${p.pbo}%</td>
       <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')">${p.age}m</td>
+      <td style="cursor:pointer" onclick="openPlaqueModal('${p.plaque}')">${p.openDateLabel||'—'}</td>
     </tr>`;
   }).join('');
 
@@ -4096,6 +4098,7 @@ function buildPlaques(aoa){
       openYear: excelSerialToYear(r[idx.dateOuverture]),
       openDateLabel: excelSerialToDateLabel(r[idx.dateOuverture]),
       openSerial: Number(r[idx.dateOuverture])||null,
+      racc: Math.round((Number(r[idx.eql])||0) * (isFinite(tauxRaw)?tauxRaw:0)),
     });
   }
   return out;
