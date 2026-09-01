@@ -286,6 +286,11 @@ ul.bullets li::before{content:'▸'; position:absolute; left:0; color:var(--cyan
   font-weight:600; font-size:13px; cursor:pointer;
 }
 .assistant-input button:disabled{opacity:0.5; cursor:default;}
+#assistant-mic{background:var(--bg-elev); color:var(--text); border:1px solid var(--border-soft); flex:0 0 auto;}
+#assistant-mic.mic-active{background:var(--rose); color:#fff; border-color:var(--rose); animation:micPulse 1.2s infinite;}
+@keyframes micPulse{0%{box-shadow:0 0 0 0 rgba(220,80,100,0.5);} 70%{box-shadow:0 0 0 8px rgba(220,80,100,0);} 100%{box-shadow:0 0 0 0 rgba(220,80,100,0);}}
+.tts-btn{background:none; border:none; cursor:pointer; font-size:13px; padding:0 0 0 6px; vertical-align:middle; opacity:0.75;}
+.tts-btn:hover{opacity:1;}
 
 .switch-row{display:flex; align-items:center; justify-content:space-between; padding:14px 0; border-bottom:1px solid var(--border-soft);}
 .switch-row:last-child{border-bottom:none;}
@@ -3617,7 +3622,7 @@ function sectionAssistant(){
   </div>
   <div class="panel assistant-box">
     <div class="assistant-log" id="assistant-log">
-      <div class="msg bot">Bonjour 👋 Je connais toutes les pages de ce dashboard — pénétration FTTH, clients sans constitution, PBO à zéro client, vigilance, régions — pour la semaine ${DATA.week}. Posez-moi n'importe quelle question, je croise les données pour vous.</div>
+      <div class="msg bot">Bonjour 👋 Je connais toutes les pages de ce dashboard — pénétration FTTH, clients sans constitution, PBO à zéro client, vigilance, régions — pour la semaine ${DATA.week}. Posez-moi n'importe quelle question, je croise les données pour vous.${speakButton("Bonjour. Je connais toutes les pages de ce dashboard. Posez-moi n'importe quelle question, je croise les données pour vous.")}</div>
     </div>
     <div class="chip-row" id="assistant-suggestions">
       <span class="chip" onclick="askAssistant('Quelle région a le meilleur taux d\\'occupation ?')">Meilleure région ?</span>
@@ -3632,6 +3637,7 @@ function sectionAssistant(){
     </div>
     <div class="assistant-input">
       <input type="text" id="assistant-input" placeholder="Ex : quelles communes sont les plus faibles à Ziguinchor ?" onkeydown="if(event.key==='Enter') submitAssistant()">
+      <button id="assistant-mic" onclick="toggleVoiceInput()" title="Dicter votre question">🎤</button>
       <button id="assistant-send" onclick="submitAssistant()">Envoyer</button>
     </div>
   </div>
@@ -5423,7 +5429,7 @@ async function askAssistant(question){
     answer = answer || "Je n'ai pas pu générer de réponse pour cette question.";
     assistantHistory.push({role:'assistant', content: answer});
     loadingMsg.remove();
-    log.appendChild(el(`<div class="msg bot">${renderMarkdownLite(answer)}</div>`));
+    log.appendChild(el(`<div class="msg bot">${renderMarkdownLite(answer)}${speakButton(answer)}</div>`));
     assistantBusy = false;
     if(sendBtn) sendBtn.disabled = false;
     document.querySelectorAll('#assistant-suggestions .chip').forEach(c=>c.classList.remove('chip-disabled'));
@@ -5463,6 +5469,90 @@ function submitAssistant(){
   if(!q) return;
   input.value='';
   askAssistant(q);
+}
+
+/* ---------------- Assistant IA : version audio ---------------- */
+/* Lecture à voix haute (synthèse vocale native du navigateur — aucune clé
+   API, aucun coût, fonctionne hors-ligne). On stocke le texte brut (avant
+   mise en forme markdown) dans un registre pour éviter tout souci
+   d'échappement de guillemets/apostrophes dans l'attribut onclick. */
+window.__ttsTexts = {};
+let ttsCounter = 0;
+let currentUtterance = null;
+
+function speakButton(text){
+  if(!('speechSynthesis' in window)) return '';
+  const id = 'tts' + (ttsCounter++);
+  window.__ttsTexts[id] = text;
+  return ` <button class="tts-btn" id="btn-${id}" onclick="toggleSpeak('${id}')" title="Écouter cette réponse">🔊</button>`;
+}
+
+function stripMarkdownForSpeech(text){
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^- /gm, '')
+    .replace(/#{1,6}\s?/g, '')
+    .replace(/\n{2,}/g, '. ');
+}
+
+function toggleSpeak(id){
+  if(!('speechSynthesis' in window)) return;
+  const btn = document.getElementById('btn-'+id);
+  // Si on reclique sur le bouton en cours de lecture, on arrête simplement.
+  if(currentUtterance && currentUtterance.__id===id && speechSynthesis.speaking){
+    speechSynthesis.cancel();
+    if(btn) btn.textContent = '🔊';
+    currentUtterance = null;
+    return;
+  }
+  speechSynthesis.cancel(); // une seule lecture à la fois
+  document.querySelectorAll('.tts-btn').forEach(b=>b.textContent='🔊');
+  const raw = window.__ttsTexts[id] || '';
+  const utter = new SpeechSynthesisUtterance(stripMarkdownForSpeech(raw));
+  utter.__id = id;
+  utter.lang = 'fr-FR';
+  const voices = speechSynthesis.getVoices();
+  const frVoice = voices.find(v=>v.lang && v.lang.startsWith('fr'));
+  if(frVoice) utter.voice = frVoice;
+  utter.onend = ()=>{ if(btn) btn.textContent = '🔊'; currentUtterance = null; };
+  utter.onerror = ()=>{ if(btn) btn.textContent = '🔊'; currentUtterance = null; };
+  currentUtterance = utter;
+  if(btn) btn.textContent = '⏸️';
+  speechSynthesis.speak(utter);
+}
+
+/* Dictée vocale (reconnaissance de la parole, native au navigateur — surtout
+   Chrome/Edge). Remplit le champ de question, ne l'envoie pas automatiquement
+   pour laisser le temps de relire/corriger avant "Envoyer". */
+let voiceRecognition = null;
+let voiceListening = false;
+function toggleVoiceInput(){
+  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const micBtn = document.getElementById('assistant-mic');
+  if(!SpeechRecognitionAPI){
+    showToast("Dictée vocale non disponible sur ce navigateur (essayez Chrome ou Edge).", '⚠️');
+    return;
+  }
+  if(voiceListening){
+    if(voiceRecognition) voiceRecognition.stop();
+    return;
+  }
+  voiceRecognition = new SpeechRecognitionAPI();
+  voiceRecognition.lang = 'fr-FR';
+  voiceRecognition.interimResults = true;
+  voiceRecognition.maxAlternatives = 1;
+  const input = document.getElementById('assistant-input');
+  const baseValue = input.value;
+  voiceRecognition.onstart = ()=>{ voiceListening = true; if(micBtn){ micBtn.textContent='🔴'; micBtn.classList.add('mic-active'); } };
+  voiceRecognition.onresult = (event)=>{
+    let transcript = '';
+    for(let i=0;i<event.results.length;i++){ transcript += event.results[i][0].transcript; }
+    input.value = (baseValue ? baseValue+' ' : '') + transcript;
+  };
+  voiceRecognition.onerror = ()=>{ showToast("Erreur de reconnaissance vocale — réessayez.", '⚠️'); };
+  voiceRecognition.onend = ()=>{ voiceListening = false; if(micBtn){ micBtn.textContent='🎤'; micBtn.classList.remove('mic-active'); } };
+  voiceRecognition.start();
 }
 
 </script>
