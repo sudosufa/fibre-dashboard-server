@@ -5354,51 +5354,108 @@ function refreshGroqApiKeyStatus(){
 
 let assistantBusy = false;
 
-async function callAssistantProvider(provider, personalKey, systemInstruction, trimmedHistory){
-  if(provider==='groq'){
-    // Groq expose une API compatible OpenAI (chat/completions), rôles
-    // "system"/"user"/"assistant" — beaucoup plus rapide que Gemini
-    // (inférence sur puces LPU dédiées), au prix d'un modèle open-source.
-    const groqMessages = [
-      { role: 'system', content: systemInstruction },
-      ...trimmedHistory.map(m => ({ role: m.role, content: m.content })),
-    ];
-    const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${personalKey}` },
-      body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
-        messages: groqMessages,
-        max_completion_tokens: 2200,
-        reasoning_effort: "low",
-        temperature: 0.4,
-      })
-    });
-    const data = await response.json();
-    if(data.error) throw new Error(data.error.message || 'Erreur API');
-    return (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content || '').trim();
-  } else {
-    // Gemini utilise des rôles "user"/"model" (pas "user"/"assistant") et un
-    // format {role, parts:[{text}]}.
-    const geminiContents = trimmedHistory.map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
-    const model = "gemini-3.6-flash";
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${personalKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents: geminiContents,
-        generationConfig: { maxOutputTokens: 1400, temperature: 0.4 }
-      })
-    });
-    const data = await response.json();
-    if(data.error) throw new Error(data.error.message || 'Erreur API');
-    return (data.candidates && data.candidates[0] && data.candidates[0].content
-      && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-      && data.candidates[0].content.parts[0].text || '').trim();
+/* Lit un flux SSE (Server-Sent Events) générique : découpe sur les doubles
+   sauts de ligne, ne garde que les lignes "data: ...", parse chaque JSON et
+   appelle onChunk(objet) pour chacun. Utilisé pour le streaming Gemini et Groq. */
+async function readSSEStream(response, onChunk){
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    buffer += decoder.decode(value, {stream:true});
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop(); // dernier morceau possiblement incomplet, on le garde pour la suite
+    for(const part of parts){
+      const line = part.split('\n').find(l=>l.startsWith('data:'));
+      if(!line) continue;
+      const jsonStr = line.slice(5).trim();
+      if(jsonStr==='[DONE]') continue;
+      try{ onChunk(JSON.parse(jsonStr)); }catch(e){ /* fragment incomplet, on ignore */ }
+    }
+  }
+}
+
+/* Appelle le fournisseur choisi en streaming : onDelta(texte_partiel) est
+   appelé à chaque fragment reçu, pour un affichage progressif (bien plus
+   rapide à l'oeil qu'une attente silencieuse suivie d'un bloc complet).
+   Un timeout de 25s coupe la requête si le réseau ou le fournisseur reste
+   bloqué, au lieu de laisser l'indicateur de chargement tourner indéfiniment. */
+async function callAssistantProvider(provider, personalKey, systemInstruction, trimmedHistory, onDelta){
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=>controller.abort(), 25000);
+  try{
+    if(provider==='groq'){
+      // Groq expose une API compatible OpenAI (chat/completions), rôles
+      // "system"/"user"/"assistant" — beaucoup plus rapide que Gemini
+      // (inférence sur puces LPU dédiées), au prix d'un modèle open-source.
+      const groqMessages = [
+        { role: 'system', content: systemInstruction },
+        ...trimmedHistory.map(m => ({ role: m.role, content: m.content })),
+      ];
+      const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${personalKey}` },
+        body: JSON.stringify({
+          model: "openai/gpt-oss-20b",
+          messages: groqMessages,
+          max_completion_tokens: 2200,
+          reasoning_effort: "low",
+          temperature: 0.4,
+          stream: true,
+        })
+      });
+      if(!response.ok){
+        const errData = await response.json().catch(()=>null);
+        throw new Error((errData && errData.error && errData.error.message) || `Erreur HTTP ${response.status}`);
+      }
+      let full = '';
+      await readSSEStream(response, (obj)=>{
+        if(obj.error) throw new Error(obj.error.message || 'Erreur API');
+        const delta = obj.choices && obj.choices[0] && obj.choices[0].delta && obj.choices[0].delta.content;
+        if(delta){ full += delta; onDelta(full); }
+      });
+      return full.trim();
+    } else {
+      // Gemini utilise des rôles "user"/"model" (pas "user"/"assistant") et un
+      // format {role, parts:[{text}]}.
+      const geminiContents = trimmedHistory.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }],
+      }));
+      const model = "gemini-3.6-flash";
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${personalKey}`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemInstruction }] },
+          contents: geminiContents,
+          generationConfig: { maxOutputTokens: 1400, temperature: 0.4 }
+        })
+      });
+      if(!response.ok){
+        const errData = await response.json().catch(()=>null);
+        const msg = Array.isArray(errData) ? (errData[0] && errData[0].error && errData[0].error.message) : (errData && errData.error && errData.error.message);
+        throw new Error(msg || `Erreur HTTP ${response.status}`);
+      }
+      let full = '';
+      await readSSEStream(response, (obj)=>{
+        if(obj.error) throw new Error(obj.error.message || 'Erreur API');
+        const text = obj.candidates && obj.candidates[0] && obj.candidates[0].content
+          && obj.candidates[0].content.parts && obj.candidates[0].content.parts[0]
+          && obj.candidates[0].content.parts[0].text;
+        if(text){ full += text; onDelta(full); }
+      });
+      return full.trim();
+    }
+  }catch(err){
+    if(err.name==='AbortError') throw new Error("Le fournisseur n'a pas répondu à temps (délai de 25s dépassé). Réessayez.");
+    throw err;
+  }finally{
+    clearTimeout(timeoutId);
   }
 }
 
@@ -5446,13 +5503,21 @@ async function askAssistant(question){
   const isOverloaded = (msg) => /overloaded|high demand|UNAVAILABLE|503/i.test(msg||'');
   let lastErr = null;
   let answer = null;
+  let streamStarted = false;
+  const onDelta = (partialText) => {
+    if(!streamStarted){ streamStarted = true; loadingMsg.classList.remove('loading'); }
+    loadingMsg.textContent = partialText; // texte brut pendant le streaming, mise en forme finale une fois terminé
+    log.scrollTop = log.scrollHeight;
+  };
   for(let attempt=0; attempt<3 && answer==null; attempt++){
     if(attempt>0){
+      streamStarted = false;
+      loadingMsg.classList.add('loading');
       loadingMsg.textContent = `Le modèle est temporairement surchargé, nouvelle tentative (${attempt}/2)…`;
       await new Promise(r=>setTimeout(r, 1500*attempt));
     }
     try{
-      answer = await callAssistantProvider(provider, personalKey, systemInstruction, trimmedHistory);
+      answer = await callAssistantProvider(provider, personalKey, systemInstruction, trimmedHistory, onDelta);
     }catch(err){
       lastErr = err;
       if(!isOverloaded(err.message)) break; // seules les surcharges méritent un retry ; les autres erreurs remontent tout de suite
@@ -5463,8 +5528,8 @@ async function askAssistant(question){
     if(answer==null) throw lastErr || new Error('Erreur API');
     answer = answer || "Je n'ai pas pu générer de réponse pour cette question.";
     assistantHistory.push({role:'assistant', content: answer});
-    loadingMsg.remove();
-    log.appendChild(el(`<div class="msg bot">${renderMarkdownLite(answer)}${speakButton(answer)}</div>`));
+    loadingMsg.classList.remove('loading');
+    loadingMsg.innerHTML = `${renderMarkdownLite(answer)}${speakButton(answer)}`;
     assistantBusy = false;
     if(sendBtn) sendBtn.disabled = false;
     document.querySelectorAll('#assistant-suggestions .chip').forEach(c=>c.classList.remove('chip-disabled'));
