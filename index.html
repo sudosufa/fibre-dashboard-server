@@ -5356,7 +5356,7 @@ let assistantBusy = false;
 
 async function callAssistantProvider(provider, personalKey, systemInstruction, trimmedHistory){
   const controller = new AbortController();
-  const timeoutId = setTimeout(()=>controller.abort(), 30000);
+  const timeoutId = setTimeout(()=>controller.abort(), 45000);
   try{
     if(provider==='groq'){
       // Groq expose une API compatible OpenAI (chat/completions), rôles
@@ -5412,7 +5412,7 @@ async function callAssistantProvider(provider, personalKey, systemInstruction, t
       return text;
     }
   }catch(err){
-    if(err.name==='AbortError') throw new Error("Le fournisseur n'a pas répondu à temps (délai de 30s dépassé). Réessayez.");
+    if(err.name==='AbortError') throw new Error("Le fournisseur n'a pas répondu à temps (délai de 45s dépassé). Réessayez.");
     throw err;
   }finally{
     clearTimeout(timeoutId);
@@ -5460,12 +5460,12 @@ async function askAssistant(question){
   // fréquentes sur les modèles gratuits aux heures de pointe, pas un bug chez
   // nous. On retente automatiquement 2 fois avant d'afficher une erreur, pour
   // que la personne n'ait presque jamais à recliquer elle-même.
-  const isOverloaded = (msg) => /overloaded|high demand|UNAVAILABLE|503/i.test(msg||'');
+  const isOverloaded = (msg) => /overloaded|high demand|UNAVAILABLE|503|n'a pas répondu à temps/i.test(msg||'');
   let lastErr = null;
   let answer = null;
   for(let attempt=0; attempt<3 && answer==null; attempt++){
     if(attempt>0){
-      loadingMsg.textContent = `Le modèle est temporairement surchargé, nouvelle tentative (${attempt}/2)…`;
+      loadingMsg.textContent = `Pas de réponse pour l'instant, nouvelle tentative (${attempt}/2)…`;
       await new Promise(r=>setTimeout(r, 1500*attempt));
     }
     try{
