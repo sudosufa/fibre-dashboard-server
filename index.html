@@ -5396,14 +5396,20 @@ async function callAssistantProvider(provider, personalKey, systemInstruction, t
         body: JSON.stringify({
           system_instruction: { parts: [{ text: systemInstruction }] },
           contents: geminiContents,
-          generationConfig: { maxOutputTokens: 1400, temperature: 0.4 }
+          generationConfig: { maxOutputTokens: 3000, temperature: 0.4, thinkingConfig: { thinkingLevel: "low" } }
         })
       });
       const data = await response.json();
       if(data.error) throw new Error(data.error.message || 'Erreur API');
-      return (data.candidates && data.candidates[0] && data.candidates[0].content
-        && data.candidates[0].content.parts && data.candidates[0].content.parts[0]
-        && data.candidates[0].content.parts[0].text || '').trim();
+      const candidate = data.candidates && data.candidates[0];
+      const text = (candidate && candidate.content && candidate.content.parts
+        && candidate.content.parts[0] && candidate.content.parts[0].text || '').trim();
+      if(!text && candidate && candidate.finishReason==='MAX_TOKENS'){
+        // Le budget de tokens a été entièrement consommé par le raisonnement
+        // interne du modèle avant qu'il n'écrive de réponse visible.
+        throw new Error("Le modèle a épuisé son budget de réponse en réfléchissant, sans écrire de texte visible (question probablement trop complexe pour le budget actuel). Réessayez, ou reformulez la question plus simplement.");
+      }
+      return text;
     }
   }catch(err){
     if(err.name==='AbortError') throw new Error("Le fournisseur n'a pas répondu à temps (délai de 30s dépassé). Réessayez.");
