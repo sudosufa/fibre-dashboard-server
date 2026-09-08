@@ -722,6 +722,24 @@ function buildPenetrationData(plaques, communesAOA, fictifsAOA, clientAOA, curWe
   };
 }
 
+/* La feuille DATABASE contient la vraie colonne "Nombre de raccorde" par
+   plaque (clé "NRO+PLAQUES", ex. "O_MED_A03") — valeur exacte du fichier
+   source, à privilégier sur l'estimation dérivée EQL x Taux d'Occupation
+   utilisée en repli si la feuille ou la colonne est absente. */
+function buildRaccByPlaque(aoa){
+  if(!aoa || !aoa.length) return {};
+  const headers = aoa[0];
+  const idx = { plaque: headers.indexOf('NRO+PLAQUES'), racc: headers.indexOf('Nombre de raccorde') };
+  if(idx.plaque === -1 || idx.racc === -1) return {};
+  const map = {};
+  for(let i=1;i<aoa.length;i++){
+    const r = aoa[i];
+    if(!r || r[idx.plaque]==null) continue;
+    map[String(r[idx.plaque])] = Number(r[idx.racc])||0;
+  }
+  return map;
+}
+
 function buildDataFromWorkbook(wb){
   const plaquesAOA = getSheetAOA(wb, 'TO_Plaques');
   const synthAOA = getSheetAOA(wb, 'SYNTHESE');
@@ -731,6 +749,9 @@ function buildDataFromWorkbook(wb){
   }
   const plaques = buildPlaques(plaquesAOA);
   if(!plaques.length) throw new Error("Aucune plaque trouvée dans l'onglet TO_Plaques.");
+  const databaseAOA = getSheetAOA(wb, 'DATABASE');
+  const raccByPlaque = buildRaccByPlaque(databaseAOA);
+  plaques.forEach(p => { if(raccByPlaque[p.plaque] != null) p.racc = raccByPlaque[p.plaque]; });
   const regionNaming = buildRegionNaming(plaques);
 
   const plaqueCountByRegion = {}, pboSumByRegion = {}, pboCountByRegion = {};
