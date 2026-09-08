@@ -1309,7 +1309,7 @@ function sectionDashboard(){
     <div class="kpi-card">
       <div class="kpi-label">Plaques suivies</div>
       <div class="kpi-value">${fmt(G.total_plaques)}</div>
-      <div class="kpi-delta" style="color:var(--text-dim)">14 régions · 111 communes</div>
+      <div class="kpi-delta" style="color:var(--text-dim)">${DATA.regions.length} régions · ${DATA.penetration.communesFibrees} communes</div>
     </div>
   </div>
 
@@ -1513,7 +1513,7 @@ function downloadReport(){
     `EQL total : ${fmt(G.eql_cur)} (${fmtSigned(G.eql_cur-G.eql_prev)} vs ${prevWeekLabel})`,
     `Clients raccordés : ${fmt(G.racc_cur)} (${fmtSigned(G.delta_racc)} vs ${prevWeekLabel})`,
     `Taux d'occupation global : ${pct(G.taux_cur)} (${pctSigned(G.delta_taux)} vs ${prevWeekLabel})`,
-    `Plaques suivies : ${fmt(G.total_plaques)} sur 14 régions`,
+    `Plaques suivies : ${fmt(G.total_plaques)} sur ${DATA.regions.length} régions`,
     ``,
     `Meilleure région : ${bestRegion.region} (${pct(bestRegion.taux)})`,
     `Région à renforcer : ${worstRegion.region} (${pct(worstRegion.taux)})`,
