@@ -51,11 +51,17 @@ function buildPlaques(aoa){
     if(!r || r[idx.plaque]==null) continue;
     const tauxRaw = Number(r[idx.taux]);
     const pboRaw = Number(r[idx.pbo]);
+    const eqlVal = Number(r[idx.eql])||0;
+    const tauxVal = isFinite(tauxRaw) ? round2(tauxRaw*100) : 0;
     out.push({
       plaque: String(r[idx.plaque]),
       zone: r[idx.zone]||'',
-      eql: Number(r[idx.eql])||0,
-      taux: isFinite(tauxRaw) ? round2(tauxRaw*100) : 0,
+      eql: eqlVal,
+      // La feuille TO_Plaques ne fournit pas de colonne "Clients Raccordés"
+      // par plaque, seulement l'EQL et le Taux d'Occupation (= racc/eql).
+      // On dérive donc le nombre de raccordés à partir de ces deux valeurs.
+      racc: Math.round(eqlVal * tauxVal / 100),
+      taux: tauxVal,
       pbo: isFinite(pboRaw) ? round2(pboRaw*100) : 0,
       age: Number(r[idx.age])||0,
       commune: r[idx.commune]||'',
