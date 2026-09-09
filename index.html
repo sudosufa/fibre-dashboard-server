@@ -734,6 +734,11 @@ body[data-theme="light"] .msg.user{color:#04413a;}
 </style>
 </head>
 <body>
+<div id="initial-load-overlay" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg,#0b0f19);color:var(--text-dim,#8b93a7);font:14px system-ui,sans-serif;">
+  <div style="width:34px;height:34px;border-radius:50%;border:3px solid rgba(255,255,255,0.15);border-top-color:#3b82f6;animation:initial-load-spin 0.8s linear infinite;"></div>
+  <div>Chargement des données…</div>
+</div>
+<style>@keyframes initial-load-spin{to{transform:rotate(360deg)}}</style>
 <div class="app">
 
   <div class="sidebar">
@@ -4046,9 +4051,23 @@ updateSidebarFooter();
 if(getGithubConfig().owner && getGithubConfig().repo){ setSyncingIndicator(true); } else { updateDemoIndicators(); }
 updateFavorisBadge();
 
+/* On évite d'afficher brièvement les données d'exemple (semaine figée dans le
+   code) avant que les vraies données S-en-cours n'arrivent de GitHub : on
+   garde un écran de chargement tant que la première synchronisation n'est
+   pas terminée (succès ou échec), puis on révèle le tableau de bord une
+   seule fois avec les bonnes données. */
+function revealApp(){
+  const overlay = document.getElementById('initial-load-overlay');
+  if(overlay) overlay.remove();
+}
 render('dashboard');
 if(typeof refreshPenSection === 'function') refreshPenSection();
-loadFromGithub(false); // tentative silencieuse de récupération des données partagées, si configuré
+const __ghCfg = getGithubConfig();
+if(__ghCfg.owner && __ghCfg.repo){
+  loadFromGithub(false).finally(revealApp); // attend la sync avant de révéler
+}else{
+  revealApp(); // pas de dépôt configuré : rien à attendre, données d'exemple affichées directement
+}
 
 /* ================== IMPORT D'UN NOUVEAU FICHIER EXCEL ==================
    Lit les feuilles TO_Plaques / SYNTHESE / TO_Communes du classeur importé
